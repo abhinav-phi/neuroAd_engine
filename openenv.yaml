@@ -1,0 +1,11 @@
+name: cognitive-ad-testing
+description: >
+  RL environment where advertisement content is restructured to maximize
+  simulated cognitive engagement using metrics grounded in Meta's TRIBE v2
+  brain encoding outputs or a calibrated lightweight fallback.
+tags:
+  - openenv
+  - advertising
+  - cognitive-science
+  - tribev2
+  - neuroscience
