@@ -1,4 +1,18 @@
-"""Simulation entrypoints for TRIBE v2-backed and parametric cognitive scoring."""
+"""Simulation entrypoints for TRIBE v2-backed and parametric cognitive scoring.
+
+Member B ownership. This module is the 'physics engine' of the environment.
+All functions are deterministic: given the same AdScenario, you always get
+the same CognitiveMetrics back. Randomness lives only in reset(), not here.
+
+Scientific grounding:
+  - Serial Position Effect   (Murdock 1962): primacy and recency segments
+                              get attention boosts
+  - Cognitive Load Theory    (Sweller 1988): complexity drains working memory
+  - Atkinson-Shiffrin Model  (1968): memory encoding is gated by attention
+                              and emotion
+  - Somatic Marker Hypothesis (Damasio): emotional intensity aids recall and
+                              tags content as meaningful
+"""
 
 from __future__ import annotations
 
@@ -21,42 +35,58 @@ from src.tribe_bridge import (
 )
 
 
+# ---------------------------------------------------------------------------
+# Utility
+# ---------------------------------------------------------------------------
+
 def _clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
 
 
-DEFAULT_COEFFICIENTS = {
+# ---------------------------------------------------------------------------
+# Default coefficients (embedded so the module works without a JSON file)
+# ---------------------------------------------------------------------------
+
+DEFAULT_COEFFICIENTS: dict = {
     "attention": {
+        # Serial Position Effect: primacy boost for top-2 positions
         "base": 0.40,
-        "position_bonus_top2": 0.06,
-        "hook_bonus": 0.10,
-        "number_bonus": 0.05,
-        "question_bonus": 0.06,
+        "position_bonus_top2": 0.06,   # primacy boost
+        "position_bonus_last": 0.04,   # recency boost (last segment)
+        "hook_bonus": 0.10,            # hook segment type is designed to grab attention
+        "number_bonus": 0.05,          # numeric evidence anchors attention (Kahneman)
+        "question_bonus": 0.06,        # open questions create cognitive engagement
         "emphasis_bonus_per_level": 0.03,
-        "complexity_penalty": 0.18,
+        "complexity_penalty": 0.18,    # high complexity drains attention
         "pacing_fast_bonus": 0.03,
         "pacing_slow_penalty": 0.02,
     },
     "memory": {
+        # Atkinson-Shiffrin: attention + emotional intensity gate encoding
         "base": 0.20,
         "attention_weight": 0.46,
         "emotion_weight": 0.24,
-        "testimonial_or_data_bonus": 0.04,
-        "emphasis_weight": 0.60,
-        "complexity_penalty": 0.10,
+        "testimonial_or_data_bonus": 0.04,  # episodic + semantic anchors
+        "emphasis_weight": 0.60,             # salience amplifies encoding
+        "complexity_penalty": 0.10,          # high load competes with encoding
+        "primacy_bonus": 0.05,               # first 2 segments encoded stronger
+        "recency_bonus": 0.04,               # last segment still in working memory
     },
     "load": {
+        # Cognitive Load Theory: complexity × count vs. working-memory capacity
         "base": 0.30,
         "avg_complexity_weight": 0.44,
-        "extra_segment_weight": 0.03,
-        "avg_emphasis_weight": 0.16,
+        "extra_segment_weight": 0.03,   # each segment beyond threshold costs
+        "avg_emphasis_weight": 0.16,    # heavy styling adds visual processing cost
         "extra_segment_threshold": 5,
     },
     "emotional_valence": {
+        # Simple offset-and-scale: raw emotion 0.35 maps to valence ≈ 0
         "avg_emotion_offset": 0.35,
         "avg_emotion_weight": 1.60,
     },
     "engagement": {
+        # Composite: attention + memory drive engagement; load penalises it
         "attention_weight": 0.42,
         "memory_weight": 0.33,
         "emotion_weight": 0.18,
@@ -65,12 +95,20 @@ DEFAULT_COEFFICIENTS = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Coefficient loading
+# ---------------------------------------------------------------------------
+
 def _default_coeff_path() -> Path:
     return Path(__file__).resolve().parents[1] / "calibration" / "coefficients.v1.json"
 
 
 def load_parametric_coefficients(coeff_path: str | Path | None = None) -> dict:
-    """Load coefficients from JSON, falling back to embedded defaults."""
+    """Load coefficients from JSON, falling back to embedded defaults.
+
+    Falls back silently so that the simulator always works — even without
+    the calibration artifact on disk.
+    """
     path = Path(coeff_path) if coeff_path else _default_coeff_path()
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -82,14 +120,180 @@ def load_parametric_coefficients(coeff_path: str | Path | None = None) -> dict:
     return coefficients
 
 
+# ---------------------------------------------------------------------------
+# Per-segment attention scorer
+# ---------------------------------------------------------------------------
+
+def _compute_attention_score(
+    seg_idx: int,
+    total_segments: int,
+    segment,   # AdSegment
+    attention_c: dict,
+) -> float:
+    """Compute attention score for a single segment.
+
+    Implements:
+      - Serial Position Effect: primacy (top-2) and recency (last) bonus
+      - Hook segment gets extra grab bonus
+      - Numeric/question content hooks cognitive engagement
+      - Emphasis and pacing modifiers
+      - Complexity penalty (high complexity degrades voluntary attention)
+    """
+    position_bonus = 0.0
+    if seg_idx < 2:
+        position_bonus = attention_c["position_bonus_top2"]  # primacy
+    elif seg_idx == total_segments - 1:
+        position_bonus = attention_c.get("position_bonus_last", 0.04)  # recency
+
+    hook_bonus = attention_c["hook_bonus"] if segment.segment_type == "hook" else 0.0
+    number_bonus = attention_c["number_bonus"] if segment.has_number else 0.0
+    question_bonus = attention_c["question_bonus"] if segment.has_question else 0.0
+    emphasis_bonus = attention_c["emphasis_bonus_per_level"] * segment.emphasis_level
+    complexity_penalty = attention_c["complexity_penalty"] * segment.complexity_score
+    pacing_bonus = {
+        "fast": attention_c["pacing_fast_bonus"],
+        "medium": 0.0,
+        "slow": -attention_c["pacing_slow_penalty"],
+    }[segment.pacing]
+
+    raw = (
+        attention_c["base"]
+        + position_bonus
+        + hook_bonus
+        + number_bonus
+        + question_bonus
+        + emphasis_bonus
+        + pacing_bonus
+        - complexity_penalty
+    )
+    return _clamp(raw, 0.0, 1.0)
+
+
+# ---------------------------------------------------------------------------
+# Per-segment memory retention scorer
+# ---------------------------------------------------------------------------
+
+def _compute_memory_score(
+    seg_idx: int,
+    total_segments: int,
+    segment,           # AdSegment
+    attention_score: float,
+    memory_c: dict,
+) -> float:
+    """Compute memory retention for a single segment.
+
+    Implements:
+      - Atkinson-Shiffrin: attention × emotion gate encoding strength
+      - Emphasis / salience multiplier
+      - Testimonial and data segments are episodic anchors → bonus
+      - Complexity drains encoding capacity
+      - Primacy and recency effects (serial position on memory)
+    """
+    emotion_contribution = segment.emotional_intensity * memory_c["emotion_weight"]
+    attention_contribution = attention_score * memory_c["attention_weight"]
+    type_bonus = (
+        memory_c["testimonial_or_data_bonus"]
+        if segment.segment_type in {"testimonial", "data"}
+        else 0.0
+    )
+    emphasis_contribution = (segment.emphasis_level / 3.0) * memory_c["emphasis_weight"]
+    complexity_penalty = segment.complexity_score * memory_c["complexity_penalty"]
+
+    # Serial position memory bonuses
+    primacy_bonus = memory_c.get("primacy_bonus", 0.05) if seg_idx < 2 else 0.0
+    recency_bonus = memory_c.get("recency_bonus", 0.04) if seg_idx == total_segments - 1 else 0.0
+
+    raw = (
+        memory_c["base"]
+        + attention_contribution
+        + emotion_contribution
+        + type_bonus
+        + emphasis_contribution
+        + primacy_bonus
+        + recency_bonus
+        - complexity_penalty
+    )
+    return _clamp(raw, 0.0, 1.0)
+
+
+# ---------------------------------------------------------------------------
+# Global-level metric computers
+# ---------------------------------------------------------------------------
+
+def _compute_cognitive_load(scenario: AdScenario, load_c: dict) -> float:
+    """Cognitive Load Theory: complexity × count vs. working-memory capacity.
+
+    More segments and higher average complexity both raise load.
+    Heavy emphasis adds visual processing overhead.
+    """
+    avg_complexity = mean(seg.complexity_score for seg in scenario.segments)
+    avg_emphasis = mean(seg.emphasis_level for seg in scenario.segments) / 3.0
+    extra_segments = max(0, len(scenario.segments) - load_c["extra_segment_threshold"])
+
+    raw = (
+        load_c["base"]
+        + avg_complexity * load_c["avg_complexity_weight"]
+        + extra_segments * load_c["extra_segment_weight"]
+        + avg_emphasis * load_c["avg_emphasis_weight"]
+    )
+    return _clamp(raw, 0.0, 1.0)
+
+
+def _compute_emotional_valence(scenario: AdScenario, valence_c: dict) -> float:
+    """Map average emotional intensity to a signed valence in [-1, 1].
+
+    Damasio's Somatic Marker Hypothesis: emotional content tags memory and
+    biases decision-making. We centre around 0.35 (neutral-ish) so that
+    unemotional copy produces slight negative valence (cold/clinical feel)
+    while emotionally warm copy is positive.
+    """
+    avg_emotion = mean(seg.emotional_intensity for seg in scenario.segments)
+    raw = (avg_emotion - valence_c["avg_emotion_offset"]) * valence_c["avg_emotion_weight"]
+    return _clamp(raw, -1.0, 1.0)
+
+
+def _compute_engagement(
+    attention_scores: list[float],
+    memory_retention: list[float],
+    emotional_valence: float,
+    cognitive_load: float,
+    engagement_c: dict,
+) -> float:
+    """Composite engagement: high attention + memory + positive emotion - load."""
+    avg_attention = mean(attention_scores)
+    avg_memory = mean(memory_retention)
+    # Normalise valence from [-1,1] to [0,1] for the engagement formula
+    normalised_valence = _clamp((emotional_valence + 1.0) / 2.0, 0.0, 1.0)
+
+    raw = (
+        avg_attention * engagement_c["attention_weight"]
+        + avg_memory * engagement_c["memory_weight"]
+        + normalised_valence * engagement_c["emotion_weight"]
+        - cognitive_load * engagement_c["load_penalty"]
+    )
+    return _clamp(raw, 0.0, 1.0)
+
+
+# ---------------------------------------------------------------------------
+# Parametric brain response builder (for observation enrichment)
+# ---------------------------------------------------------------------------
+
 def _build_parametric_brain_response(
     attention_scores: list[float],
     memory_scores: list[float],
     emotional_valence: float,
     load: float,
 ) -> BrainResponse:
+    """Build a synthetic BrainResponse aligned to TRIBE v2 region naming.
+
+    Regions:
+      - V1, PEF  → visual/attention cortex (proxy for attention)
+      - Hippocampus, TE1a → memory encoding regions
+      - Amygdala → emotional processing
+      - IFSa     → prefrontal cognitive control (proxy for load)
+    """
     visual = _clamp(mean(attention_scores), 0.0, 1.0)
-    memory = _clamp(mean(memory_scores), 0.0, 1.0)
+    memory_mean = _clamp(mean(memory_scores), 0.0, 1.0)
     emotion = _clamp((emotional_valence + 1.0) / 2.0, 0.0, 1.0)
     control = _clamp(load, 0.0, 1.0)
 
@@ -106,8 +310,13 @@ def _build_parametric_brain_response(
         ),
         BrainRegionActivation(
             region_name="Hippocampus",
-            activation_level=memory,
+            activation_level=memory_mean,
             cognitive_function="memory_encoding",
+        ),
+        BrainRegionActivation(
+            region_name="TE1a",
+            activation_level=_clamp(memory_mean * 0.91, 0.0, 1.0),
+            cognitive_function="temporal_memory",
         ),
         BrainRegionActivation(
             region_name="Amygdala",
@@ -123,15 +332,32 @@ def _build_parametric_brain_response(
     return BrainResponse(
         source="parametric",
         region_activations=regions,
-        cortical_attention_map=attention_scores,
-        cortical_memory_map=memory_scores,
+        cortical_attention_map=attention_scores[:],
+        cortical_memory_map=memory_scores[:],
         cortical_emotion_map=[emotion] * len(attention_scores),
         cortical_load_map=[control] * len(attention_scores),
     )
 
 
-def simulate_parametric(scenario: AdScenario, coefficients: dict | None = None) -> CognitiveMetrics:
-    """Deterministic cognitive simulator used for baseline and CPU fallback."""
+# ---------------------------------------------------------------------------
+# Main public entry points
+# ---------------------------------------------------------------------------
+
+def simulate_parametric(
+    scenario: AdScenario,
+    coefficients: dict | None = None,
+) -> CognitiveMetrics:
+    """Deterministic cognitive simulator — CPU fallback and baseline mode.
+
+    This is the core innovation of the environment. Given an AdScenario
+    (ordered segments with their properties), it computes a full set of
+    cognitive metrics without any randomness or external model.
+
+    Design guarantees:
+      - Fully deterministic: same input → same output, always
+      - All outputs bounded: attention/memory ∈ [0,1], valence ∈ [-1,1]
+      - Brain response included for rich observation data
+    """
     coeff = coefficients or load_parametric_coefficients()
     attention_c = coeff["attention"]
     memory_c = coeff["memory"]
@@ -139,77 +365,24 @@ def simulate_parametric(scenario: AdScenario, coefficients: dict | None = None) 
     valence_c = coeff["emotional_valence"]
     engagement_c = coeff["engagement"]
 
+    n = len(scenario.segments)
     attention_scores: list[float] = []
     memory_retention: list[float] = []
 
     for idx, seg in enumerate(scenario.segments):
-        position_bonus = attention_c["position_bonus_top2"] if idx < 2 else 0.0
-        hook_bonus = attention_c["hook_bonus"] if seg.segment_type == "hook" else 0.0
-        data_bonus = attention_c["number_bonus"] if seg.has_number else 0.0
-        question_bonus = attention_c["question_bonus"] if seg.has_question else 0.0
-        emphasis_bonus = attention_c["emphasis_bonus_per_level"] * seg.emphasis_level
-        complexity_penalty = attention_c["complexity_penalty"] * seg.complexity_score
-        pacing_bonus = {
-            "fast": attention_c["pacing_fast_bonus"],
-            "medium": 0.0,
-            "slow": -attention_c["pacing_slow_penalty"],
-        }[seg.pacing]
-        attention = _clamp(
-            attention_c["base"]
-            + position_bonus
-            + hook_bonus
-            + data_bonus
-            + question_bonus
-            + emphasis_bonus
-            + pacing_bonus
-            - complexity_penalty,
-            0.0,
-            1.0,
-        )
-        attention_scores.append(attention)
+        attn = _compute_attention_score(idx, n, seg, attention_c)
+        attention_scores.append(attn)
 
-        memory = _clamp(
-            memory_c["base"]
-            + attention * memory_c["attention_weight"]
-            + seg.emotional_intensity * memory_c["emotion_weight"]
-            + (
-                memory_c["testimonial_or_data_bonus"]
-                if seg.segment_type in {"testimonial", "data"}
-                else 0.0
-            )
-            + emphasis_bonus * memory_c["emphasis_weight"]
-            - seg.complexity_score * memory_c["complexity_penalty"],
-            0.0,
-            1.0,
-        )
-        memory_retention.append(memory)
+        mem = _compute_memory_score(idx, n, seg, attn, memory_c)
+        memory_retention.append(mem)
 
-    avg_complexity = mean(seg.complexity_score for seg in scenario.segments)
-    avg_emotion = mean(seg.emotional_intensity for seg in scenario.segments)
-    avg_emphasis = mean(seg.emphasis_level for seg in scenario.segments) / 3.0
-
-    cognitive_load = _clamp(
-        load_c["base"]
-        + avg_complexity * load_c["avg_complexity_weight"]
-        + max(0, len(scenario.segments) - load_c["extra_segment_threshold"]) * load_c["extra_segment_weight"]
-        + avg_emphasis * load_c["avg_emphasis_weight"],
-        0.0,
-        1.0,
-    )
-    emotional_valence = _clamp(
-        (avg_emotion - valence_c["avg_emotion_offset"]) * valence_c["avg_emotion_weight"],
-        -1.0,
-        1.0,
-    )
-    engagement_score = _clamp(
-        mean(attention_scores) * engagement_c["attention_weight"]
-        + mean(memory_retention) * engagement_c["memory_weight"]
-        + _clamp((emotional_valence + 1.0) / 2.0, 0.0, 1.0) * engagement_c["emotion_weight"]
-        - cognitive_load * engagement_c["load_penalty"],
-        0.0,
-        1.0,
+    cognitive_load = _compute_cognitive_load(scenario, load_c)
+    emotional_valence = _compute_emotional_valence(scenario, valence_c)
+    engagement_score = _compute_engagement(
+        attention_scores, memory_retention, emotional_valence, cognitive_load, engagement_c
     )
     attention_flow = classify_attention_flow(attention_scores)
+
     brain_response = _build_parametric_brain_response(
         attention_scores=attention_scores,
         memory_scores=memory_retention,
@@ -235,10 +408,15 @@ def simulate_with_tribev2(
     adapter: TribeAdapter | None = None,
     coefficients: dict | None = None,
 ) -> CognitiveMetrics:
-    """TRIBE v2 path placeholder.
+    """TRIBE v2-backed simulation with parametric fallback.
 
-    Until model integration lands, this returns calibrated parametric scores while
-    preserving a clear extension point for the GPU-backed path.
+    When adapter and tribe_model are both present, this calls the adapter to
+    get ROI timeseries predictions and maps them to cognitive metrics via the
+    bridge. If either is absent OR the adapter raises, falls back to the
+    parametric mode seamlessly.
+
+    Extension point: swap in the real facebook/tribev2 HuggingFace model by
+    implementing TribeAdapter.predict_roi_timeseries().
     """
     fallback_metrics = simulate_parametric(scenario, coefficients=coefficients)
     if adapter is None or tribe_model is None:
@@ -248,8 +426,9 @@ def simulate_with_tribev2(
     prompt_text = " ".join(seg.content for seg in scenario.segments)
 
     try:
-        _ = tribe_model
-        roi = fetch_roi_timeseries_from_adapter(adapter, text=prompt_text, segment_count=segment_count)
+        roi = fetch_roi_timeseries_from_adapter(
+            adapter, text=prompt_text, segment_count=segment_count
+        )
     except (TribeAdapterError, Exception):
         return fallback_metrics
 
