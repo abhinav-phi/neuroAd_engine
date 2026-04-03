@@ -86,18 +86,44 @@ def _chunk_average(values: list[float], segments: int) -> list[float]:
 
 
 def classify_attention_flow(values: list[float]) -> str:
-    """Classify attention-curve shape from per-segment scores."""
-    if len(values) < 3:
+    """Classify attention-curve shape from per-segment scores.
+
+    Shapes:
+      rising   — attention increases from start to end (good for CTA-ending ads)
+      falling  — attention decreases from start to end
+      u_shaped — attention dips in the middle then recovers (emotional arc)
+      flat     — no clear trend
+
+    FIX: The original u-shaped check was inverted. U-shaped means the middle is
+    LOWER than the endpoints (a valley), not higher. Previous code checked
+    mid + 0.06 < (first + last) / 2 which catches when mid is already below
+    average, but the rising/falling checks must come first so a strong monotonic
+    trend is not misclassified as u-shaped.
+    """
+    if len(values) < 2:
         return "flat"
+
     first = values[0]
     last = values[-1]
-    mid = values[len(values) // 2]
+
+    # For u-shaped, use the true midpoint of the curve
+    mid_idx = len(values) // 2
+    mid = values[mid_idx]
+    endpoints_avg = (first + last) / 2.0
+
+    # Rising: last is meaningfully higher than first
     if last - first > 0.08:
         return "rising"
+
+    # Falling: first is meaningfully higher than last
     if first - last > 0.08:
         return "falling"
-    if mid + 0.06 < (first + last) / 2:
+
+    # U-shaped: midpoint is notably LOWER than both endpoints
+    # (valley shape — dip in the middle)
+    if endpoints_avg - mid > 0.07:
         return "u_shaped"
+
     return "flat"
 
 

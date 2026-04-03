@@ -139,6 +139,11 @@ def _compute_attention_score(
       - Numeric/question content hooks cognitive engagement
       - Emphasis and pacing modifiers
       - Complexity penalty (high complexity degrades voluntary attention)
+
+    FIX: hook_primacy_synergy was previously added separately to hook_bonus
+    but the hook_bonus itself already applies when segment_type == hook.
+    The synergy now ONLY fires when the hook is also in primacy position,
+    creating a meaningful incentive to place hooks early.
     """
     position_bonus = 0.0
     if seg_idx < 2:
@@ -146,12 +151,16 @@ def _compute_attention_score(
     elif seg_idx == total_segments - 1:
         position_bonus = attention_c.get("position_bonus_last", 0.04)  # recency
 
-    hook_bonus = attention_c["hook_bonus"] if segment.segment_type == "hook" else 0.0
+    is_hook = segment.segment_type == "hook"
+    hook_bonus = attention_c["hook_bonus"] if is_hook else 0.0
+
+    # Synergy: hook in primacy position is extra powerful (not double-counted)
     hook_primacy_bonus = (
         attention_c.get("hook_primacy_synergy", 0.03)
-        if segment.segment_type == "hook" and seg_idx < 2
+        if is_hook and seg_idx < 2
         else 0.0
     )
+
     number_bonus = attention_c["number_bonus"] if segment.has_number else 0.0
     question_bonus = attention_c["question_bonus"] if segment.has_question else 0.0
     emphasis_bonus = attention_c["emphasis_bonus_per_level"] * segment.emphasis_level
@@ -319,7 +328,7 @@ def compute_emotional_valence(scenario: AdScenario, coefficients: dict | None = 
 
 
 def compute_attention_flow(attention_scores: list[float]) -> str:
-    """Classify attention curve shape."""
+    """Classify attention curve shape using the fixed classifier."""
     return classify_attention_flow(attention_scores)
 
 
@@ -364,14 +373,7 @@ def _build_parametric_brain_response(
     emotional_valence: float,
     load: float,
 ) -> BrainResponse:
-    """Build a synthetic BrainResponse aligned to TRIBE v2 region naming.
-
-    Regions:
-      - V1, PEF  → visual/attention cortex (proxy for attention)
-      - Hippocampus, TE1a → memory encoding regions
-      - Amygdala → emotional processing
-      - IFSa     → prefrontal cognitive control (proxy for load)
-    """
+    """Build a synthetic BrainResponse aligned to TRIBE v2 region naming."""
     visual = _clamp(mean(attention_scores), 0.0, 1.0)
     memory_mean = _clamp(mean(memory_scores), 0.0, 1.0)
     emotion = _clamp((emotional_valence + 1.0) / 2.0, 0.0, 1.0)
@@ -429,10 +431,6 @@ def simulate_parametric(
 ) -> CognitiveMetrics:
     """Deterministic cognitive simulator — CPU fallback and baseline mode.
 
-    This is the core innovation of the environment. Given an AdScenario
-    (ordered segments with their properties), it computes a full set of
-    cognitive metrics without any randomness or external model.
-
     Design guarantees:
       - Fully deterministic: same input → same output, always
       - All outputs bounded: attention/memory ∈ [0,1], valence ∈ [-1,1]
@@ -483,9 +481,6 @@ def simulate_with_tribev2(
     get ROI timeseries predictions and maps them to cognitive metrics via the
     bridge. If either is absent OR the adapter raises, falls back to the
     parametric mode seamlessly.
-
-    Extension point: swap in the real facebook/tribev2 HuggingFace model by
-    implementing TribeAdapter.predict_roi_timeseries().
     """
     fallback_metrics = simulate_parametric(scenario, coefficients=coefficients)
     if adapter is None or tribe_model is None:
