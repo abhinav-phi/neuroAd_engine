@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from copy import deepcopy
 from statistics import mean
+from typing import Literal
 
 from src.grader import grade_episode
-from src.models import Action, AdScenario, CognitiveMetrics, EnvState, Observation
+from src.models import Action, AdScenario, CognitiveMetrics, EnvState, GradeResult, Observation
 from src.reward import compute_reward
 from src.simulator import simulate_parametric, simulate_with_tribev2
 from src.tasks import build_scenario, get_task_config
@@ -15,9 +16,15 @@ from src.tasks import build_scenario, get_task_config
 class CognitiveAdEnv:
     """OpenEnv-compatible RL environment for cognitive ad optimization."""
 
-    def __init__(self, use_tribev2: bool = False, tribe_model: object | None = None) -> None:
+    def __init__(
+        self,
+        use_tribev2: bool = False,
+        tribe_model: object | None = None,
+        tribe_adapter: object | None = None,
+    ) -> None:
         self.use_tribev2 = use_tribev2
         self.tribe_model = tribe_model
+        self.tribe_adapter = tribe_adapter
         self.scenario: AdScenario | None = None
         self.cognitive_metrics: CognitiveMetrics | None = None
         self.initial_metrics: CognitiveMetrics | None = None
@@ -31,10 +38,22 @@ class CognitiveAdEnv:
         self.emphasis_action_count: int = 0
         self.last_reward_info: dict = {}
 
+        # Best-effort TRIBE v2 load when requested; fallback stays safe.
+        if self.use_tribev2 and self.tribe_model is None:
+            try:
+                from tribev2 import TribeModel  # type: ignore[import-not-found]
+
+                self.tribe_model = TribeModel.from_pretrained("facebook/tribev2", cache_folder="./cache")
+            except Exception:
+                self.use_tribev2 = False
+
+    def _active_simulation_mode(self) -> Literal["tribev2", "parametric"]:
+        return "tribev2" if self.use_tribev2 and self.tribe_model is not None else "parametric"
+
     def _simulate(self) -> CognitiveMetrics:
         assert self.scenario is not None
         if self.use_tribev2 and self.tribe_model is not None:
-            return simulate_with_tribev2(self.scenario, self.tribe_model)
+            return simulate_with_tribev2(self.scenario, self.tribe_model, adapter=self.tribe_adapter)
         return simulate_parametric(self.scenario)
 
     def _build_observation(self) -> Observation:
@@ -82,6 +101,7 @@ class CognitiveAdEnv:
         return EnvState(
             scenario=self.scenario.model_copy(deep=True),
             cognitive_metrics=self.cognitive_metrics.model_copy(deep=True),
+            simulation_mode=self._active_simulation_mode(),
             step=self.step_count,
             max_steps=self.max_steps,
             task_id=self.task_id,
@@ -90,6 +110,20 @@ class CognitiveAdEnv:
             action_history=[action.model_copy(deep=True) for action in self.action_history],
             cognitive_heatmap=heatmap,
             initial_metrics=self.initial_metrics.model_copy(deep=True) if self.initial_metrics else None,
+        )
+
+    def grade(self) -> GradeResult:
+        """Grade the current episode state at any time."""
+        if self.scenario is None or self.cognitive_metrics is None or self.initial_metrics is None:
+            raise RuntimeError("Environment is not initialized. Call reset(task_id) first.")
+        return grade_episode(
+            task_id=self.task_id,
+            initial_metrics=self.initial_metrics,
+            final_metrics=self.cognitive_metrics,
+            action_history=self.action_history,
+            constraints_ok=self._task_constraints_ok(),
+            steps_taken=self.step_count,
+            max_steps=self.max_steps,
         )
 
     def _find_segment_idx(self, segment_id: str) -> int:
@@ -276,15 +310,7 @@ class CognitiveAdEnv:
         info: dict = {"reward_info": reward_info}
 
         if self.done and self.initial_metrics is not None:
-            final_grade = grade_episode(
-                task_id=self.task_id,
-                initial_metrics=self.initial_metrics,
-                final_metrics=self.cognitive_metrics,
-                action_history=self.action_history,
-                constraints_ok=self._task_constraints_ok(),
-                steps_taken=self.step_count,
-                max_steps=self.max_steps,
-            )
+            final_grade = self.grade()
             info["grade"] = final_grade.model_dump()
 
         return self._build_observation(), reward_value, self.done, info
