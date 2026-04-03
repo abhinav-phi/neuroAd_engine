@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
-"""Judge-facing runner for NeuroAd.
+"""Judge-facing runner for NeuroAd OpenEnv.
 
 Runs the full evaluation loop for each task:
 1) /reset
-2) multiple /step
+2) multiple /step  
 3) /grade
 
-Features:
-- temperature=0 LLM calls (optional)
-- robust JSON extraction/parsing for LLM outputs
-- retry logic for API and LLM calls
-- heuristic fallback actions when LLM output is invalid
+Environment variables (required by OpenEnv spec):
+  API_BASE_URL  - The API endpoint for the LLM (e.g. https://router.huggingface.co/v1)
+  MODEL_NAME    - The model identifier to use for inference
+  HF_TOKEN      - Your Hugging Face / API key
+
+Optional:
+  NEUROAD_API_URL  - Backend environment URL (default: http://127.0.0.1:7860)
 """
 
 from __future__ import annotations
@@ -22,12 +24,21 @@ import time
 from typing import Any
 from urllib import error, request
 
+# ── Environment API (the RL env backend) ───────────────────────────────────
 API_BASE = os.environ.get("NEUROAD_API_URL", "http://127.0.0.1:7860").rstrip("/")
 API_TIMEOUT_SECONDS = float(os.environ.get("API_TIMEOUT_SECONDS", "20"))
 API_RETRIES = int(os.environ.get("API_RETRIES", "3"))
 
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
-OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+# ── LLM inference credentials (OpenEnv spec required vars) ─────────────────
+API_BASE_URL = os.environ.get("API_BASE_URL", "").rstrip("/")
+MODEL_NAME = os.environ.get("MODEL_NAME", "")
+HF_TOKEN = os.environ.get("HF_TOKEN", "")
+
+# Fallback: also accept OPENAI_API_KEY / OPENAI_MODEL for local testing
+_LLM_API_KEY = HF_TOKEN or os.environ.get("OPENAI_API_KEY", "")
+_LLM_BASE_URL = API_BASE_URL or os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
+_LLM_MODEL = MODEL_NAME or os.environ.get("OPENAI_MODEL", "Qwen/Qwen2.5-72B-Instruct")
+
 LLM_TIMEOUT_SECONDS = float(os.environ.get("LLM_TIMEOUT_SECONDS", "30"))
 LLM_RETRIES = int(os.environ.get("LLM_RETRIES", "2"))
 
@@ -134,28 +145,40 @@ def _safe_parse_action(raw_text: str) -> dict[str, Any] | None:
 
 
 class LLMActionPlanner:
-    def __init__(self) -> None:
-        self.enabled = bool(OPENAI_API_KEY)
+    """Plans actions using OpenAI-compatible API (HuggingFace, OpenAI, etc.)."""
 
-    def _call_openai(self, prompt: str) -> str:
+    def __init__(self) -> None:
+        self.enabled = bool(_LLM_API_KEY) and bool(_LLM_BASE_URL)
+        if self.enabled:
+            print(f"[LLM] Using model={_LLM_MODEL} at base_url={_LLM_BASE_URL}")
+        else:
+            print("[LLM] No API key/base URL configured — using heuristic planner only.")
+
+    def _call_llm(self, prompt: str) -> str:
+        """Call an OpenAI-compatible chat completions endpoint."""
+        chat_url = f"{_LLM_BASE_URL.rstrip('/')}/chat/completions"
         payload = {
-            "model": OPENAI_MODEL,
+            "model": _LLM_MODEL,
             "temperature": 0,
+            "max_tokens": 256,
             "messages": [
                 {
                     "role": "system",
                     "content": (
                         "You are an RL ad-optimization action planner. "
-                        "Return only compact JSON with keys operation and params."
+                        "Your job is to choose the best action to improve "
+                        "cognitive engagement metrics for an advertisement. "
+                        "Return ONLY compact JSON with keys 'operation' and 'params'. "
+                        "No markdown, no explanation, no code blocks."
                     ),
                 },
                 {"role": "user", "content": prompt},
             ],
         }
-        headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
+        headers: dict[str, str] = {"Authorization": f"Bearer {_LLM_API_KEY}"}
         response = _request_json(
             method="POST",
-            url="https://api.openai.com/v1/chat/completions",
+            url=chat_url,
             payload=payload,
             headers=headers,
             retries=LLM_RETRIES,
@@ -170,22 +193,39 @@ class LLMActionPlanner:
         if not self.enabled:
             return None
 
+        # Summarise observation to keep prompt short (fits small context windows)
+        metrics = observation.get("cognitive_metrics", {})
+        segments_summary = [
+            {
+                "id": s.get("id"),
+                "type": s.get("segment_type"),
+                "pos": s.get("position"),
+                "complexity": round(s.get("complexity_score", 0.5), 2),
+            }
+            for s in observation.get("segments", [])
+        ]
         prompt = (
-            "Choose the best next action for this task. "
-            "Output JSON only: {\"operation\": ..., \"params\": {...}}. "
-            "Valid operations: reorder, swap, emphasize, de_emphasize, modify_hook, "
-            "split_segment, merge_segments, set_pacing. "
             f"Task: {task_id}\n"
-            f"Observation: {json.dumps(observation, separators=(',', ':'))}"
+            f"Step: {observation.get('step', 0)}/{observation.get('max_steps', 10)}\n"
+            f"Engagement: {metrics.get('engagement_score', 0):.3f}\n"
+            f"Attention flow: {metrics.get('attention_flow', 'flat')}\n"
+            f"Cognitive load: {metrics.get('cognitive_load', 0.5):.3f}\n"
+            f"Segments: {json.dumps(segments_summary, separators=(',', ':'))}\n"
+            f"Constraints: {json.dumps(observation.get('constraints', {}), separators=(',', ':'))}\n"
+            "\nChoose the single best next action. "
+            "Valid operations: reorder, swap, emphasize, de_emphasize, modify_hook, "
+            "split_segment, merge_segments, set_pacing.\n"
+            "Return ONLY JSON: {\"operation\": \"...\", \"params\": {...}}"
         )
 
         for attempt in range(LLM_RETRIES):
             try:
-                text = self._call_openai(prompt)
+                text = self._call_llm(prompt)
                 action = _safe_parse_action(text)
                 if action:
                     return action
-            except Exception:
+            except Exception as exc:
+                print(f"[LLM] attempt {attempt + 1} failed: {exc}")
                 if attempt == LLM_RETRIES - 1:
                     break
                 _sleep_backoff(attempt)
@@ -201,12 +241,14 @@ def _find_index_by_id(segments: list[dict[str, Any]], seg_id: str) -> int | None
 
 
 def _heuristic_action(observation: dict[str, Any]) -> dict[str, Any]:
+    """Rule-based fallback planner — no LLM required."""
     segments: list[dict[str, Any]] = observation.get("segments", [])
     metrics: dict[str, Any] = observation.get("cognitive_metrics", {})
     constraints: dict[str, Any] = observation.get("constraints", {})
 
     attention: list[float] = metrics.get("attention_scores", [])
     cognitive_load = float(metrics.get("cognitive_load", 0.5))
+    step = int(observation.get("step", 0))
 
     if not segments:
         return {"operation": "swap", "params": {"pos_a": 0, "pos_b": 0}}
@@ -214,7 +256,7 @@ def _heuristic_action(observation: dict[str, Any]) -> dict[str, Any]:
     hook_idx = next((i for i, s in enumerate(segments) if s.get("segment_type") == "hook"), None)
     cta_idx = next((i for i, s in enumerate(segments) if s.get("segment_type") == "cta"), None)
 
-    # First preference: shape narrative with hook first and CTA last.
+    # Priority 1: Shape narrative — hook first, CTA last
     desired_order = list(range(len(segments)))
     changed = False
     if hook_idx is not None and hook_idx != 0:
@@ -222,33 +264,47 @@ def _heuristic_action(observation: dict[str, Any]) -> dict[str, Any]:
         desired_order.insert(0, hook_idx)
         changed = True
     if cta_idx is not None:
-        # Recompute index position within desired_order after potential hook move.
         cta_cur = desired_order.index(cta_idx)
         if cta_cur != len(desired_order) - 1:
             desired_order.pop(cta_cur)
             desired_order.append(cta_idx)
             changed = True
-    if changed:
+    if changed and step < 2:
         return {"operation": "reorder", "params": {"new_order": desired_order}}
 
-    # If load is too high, slow down the most complex segment.
+    # Priority 2: Reduce load if too high
     load_limit = float(constraints.get("max_cognitive_load", 0.72))
-    if cognitive_load > load_limit:
+    if cognitive_load > load_limit and segments:
+        # Find most complex segment and slow its pacing
         target = max(segments, key=lambda s: float(s.get("complexity_score", 0.0)))
-        return {"operation": "set_pacing", "params": {"segment_id": target.get("id"), "pacing": "slow"}}
+        return {
+            "operation": "set_pacing",
+            "params": {"segment_id": target.get("id"), "pacing": "slow"},
+        }
 
-    # Emphasize lowest-attention segment to improve weak spots.
+    # Priority 3: Emphasise the weakest attention segment
     if attention and len(attention) == len(segments):
         low_idx = min(range(len(attention)), key=lambda i: attention[i])
-        return {"operation": "emphasize", "params": {"segment_id": segments[low_idx].get("id")}}
+        return {
+            "operation": "emphasize",
+            "params": {"segment_id": segments[low_idx].get("id")},
+        }
 
-    # Fallback safe no-op-like swap between first two positions if available.
+    # Priority 4: Try modifying the hook for variety
+    if hook_idx is not None and step % 3 == 2:
+        return {
+            "operation": "modify_hook",
+            "params": {"strategy": "question"},
+        }
+
+    # Fallback: swap first two positions
     if len(segments) > 1:
         return {"operation": "swap", "params": {"pos_a": 0, "pos_b": 1}}
     return {"operation": "emphasize", "params": {"segment_id": segments[0].get("id")}}
 
 
 def _coerce_action(observation: dict[str, Any], action: dict[str, Any] | None) -> dict[str, Any]:
+    """Validate and normalise an action, falling back to heuristic if invalid."""
     if not action:
         return _heuristic_action(observation)
 
@@ -259,7 +315,7 @@ def _coerce_action(observation: dict[str, Any], action: dict[str, Any] | None) -
     if op not in ALLOWED_OPS or not isinstance(params, dict):
         return _heuristic_action(observation)
 
-    # Normalize some common malformed payloads from LLM output.
+    # Normalise reorder: accept list of segment IDs or list of indices
     if op == "reorder" and isinstance(params.get("new_order"), list):
         vals = params["new_order"]
         if vals and isinstance(vals[0], str):
@@ -271,6 +327,7 @@ def _coerce_action(observation: dict[str, Any], action: dict[str, Any] | None) -
                 permutation.append(idx)
             return {"operation": "reorder", "params": {"new_order": permutation}}
 
+    # Normalise swap: accept either pos_a/pos_b or segmentA/segmentB
     if op == "swap":
         if "segmentA" in params and "segmentB" in params:
             idx_a = _find_index_by_id(segments, str(params["segmentA"]))
@@ -279,17 +336,22 @@ def _coerce_action(observation: dict[str, Any], action: dict[str, Any] | None) -
                 return _heuristic_action(observation)
             return {"operation": "swap", "params": {"pos_a": idx_a, "pos_b": idx_b}}
 
+    # Normalise camelCase → snake_case for emphasize/de_emphasize
     if op == "de_emphasize" and "segmentId" in params:
         return {"operation": "de_emphasize", "params": {"segment_id": params["segmentId"]}}
-
     if op == "emphasize" and "segmentId" in params:
         return {"operation": "emphasize", "params": {"segment_id": params["segmentId"]}}
 
+    # Normalise set_pacing with numeric value
     if op == "set_pacing" and "pacingValue" in params and "segmentId" in params:
         pace_num = float(params["pacingValue"])
         pacing = "fast" if pace_num >= 0.67 else "medium" if pace_num >= 0.34 else "slow"
-        return {"operation": "set_pacing", "params": {"segment_id": params["segmentId"], "pacing": pacing}}
+        return {
+            "operation": "set_pacing",
+            "params": {"segment_id": params["segmentId"], "pacing": pacing},
+        }
 
+    # Normalise modify_hook with content string
     if op == "modify_hook" and "hookContent" in params:
         content = str(params["hookContent"]).lower()
         if "?" in content:
@@ -315,8 +377,10 @@ def _coerce_action(observation: dict[str, Any], action: dict[str, Any] | None) -
 
 
 def run_task(task_id: str, planner: LLMActionPlanner) -> dict[str, Any]:
-    reset_payload = {"task_id": task_id}
-    reset_result = api_call("POST", "/reset", reset_payload)
+    """Run one complete episode for a task and return results."""
+    print(f"\n[TASK] Starting {task_id} ...")
+
+    reset_result = api_call("POST", "/reset", {"task_id": task_id})
     observation = reset_result.get("observation")
     if not isinstance(observation, dict):
         raise RuntimeError(f"/reset returned unexpected payload for task {task_id}")
@@ -325,9 +389,11 @@ def run_task(task_id: str, planner: LLMActionPlanner) -> dict[str, Any]:
     history: list[dict[str, Any]] = []
     last_info: dict[str, Any] = {}
 
-    for _ in range(max_steps):
+    for step_num in range(max_steps):
         llm_action = planner.plan(observation, task_id)
         action = _coerce_action(observation, llm_action)
+
+        print(f"  Step {step_num + 1}/{max_steps}: {action['operation']} {action.get('params', {})}")
 
         step_result = api_call("POST", "/step", action)
         observation = step_result.get("observation")
@@ -337,6 +403,7 @@ def run_task(task_id: str, planner: LLMActionPlanner) -> dict[str, Any]:
         last_info = info
 
         history.append({"action": action, "reward": reward})
+        print(f"  → reward={reward:.4f}, done={done}")
 
         if not isinstance(observation, dict):
             raise RuntimeError(f"/step returned invalid observation for task {task_id}")
@@ -344,17 +411,21 @@ def run_task(task_id: str, planner: LLMActionPlanner) -> dict[str, Any]:
         if done:
             break
 
+    # Grade the episode
     grade: dict[str, Any] | None = None
     try:
         grade_result = api_call("POST", "/grade", None)
         if isinstance(grade_result.get("grade"), dict):
             grade = grade_result["grade"]
-        elif isinstance(grade_result, dict):
+        elif isinstance(grade_result, dict) and "score" in grade_result:
             grade = grade_result
-    except Exception:
-        # Fallback: grade may already be attached at final step.
+    except Exception as exc:
+        print(f"  [WARN] /grade call failed: {exc}")
         if isinstance(last_info.get("grade"), dict):
             grade = last_info["grade"]
+
+    score = grade.get("score", 0.0) if grade else 0.0
+    print(f"  [RESULT] task={task_id} steps={len(history)} score={score:.4f}")
 
     return {
         "task_id": task_id,
@@ -366,15 +437,33 @@ def run_task(task_id: str, planner: LLMActionPlanner) -> dict[str, Any]:
 
 
 def main() -> None:
-    # Health check up front to fail early if API is unreachable.
-    _ = api_call("GET", "/health", None)
+    print("=" * 60)
+    print("NeuroAd OpenEnv — Inference Runner")
+    print(f"  env_url   : {API_BASE}")
+    print(f"  llm_url   : {_LLM_BASE_URL}")
+    print(f"  model     : {_LLM_MODEL}")
+    print(f"  llm_active: {bool(_LLM_API_KEY)}")
+    print("=" * 60)
+
+    # Health check
+    try:
+        health = api_call("GET", "/health", None)
+        print(f"[HEALTH] {health}")
+    except RuntimeError as exc:
+        raise SystemExit(f"Environment unreachable: {exc}") from exc
 
     planner = LLMActionPlanner()
     results: list[dict[str, Any]] = []
 
     for task_id in TASK_IDS:
-        results.append(run_task(task_id, planner))
+        try:
+            result = run_task(task_id, planner)
+            results.append(result)
+        except Exception as exc:
+            print(f"[ERROR] Task {task_id} failed: {exc}")
+            results.append({"task_id": task_id, "error": str(exc), "grade": None})
 
+    # Compute summary
     total = len(results)
     graded = [r for r in results if isinstance(r.get("grade"), dict)]
     avg_score = 0.0
@@ -383,11 +472,25 @@ def main() -> None:
 
     summary = {
         "api_base": API_BASE,
+        "llm_base": _LLM_BASE_URL,
+        "model": _LLM_MODEL,
         "tasks_run": total,
         "tasks_graded": len(graded),
         "average_score": round(avg_score, 4),
+        "baseline_scores": {
+            r["task_id"]: round(r["grade"].get("score", 0.0), 4)
+            for r in results
+            if isinstance(r.get("grade"), dict)
+        },
         "results": results,
     }
+
+    print("\n" + "=" * 60)
+    print("BASELINE SCORES:")
+    for task_id, score in summary["baseline_scores"].items():
+        print(f"  {task_id}: {score:.4f}")
+    print(f"  AVERAGE : {avg_score:.4f}")
+    print("=" * 60)
     print(json.dumps(summary, indent=2))
 
 

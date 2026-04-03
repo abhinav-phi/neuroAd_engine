@@ -1,11 +1,151 @@
 name: cognitive-ad-testing
+version: "1.0.0"
 description: >
-  RL environment where advertisement content is restructured to maximize
-  simulated cognitive engagement using metrics grounded in Meta's TRIBE v2
-  brain encoding outputs or a calibrated lightweight fallback.
+  RL environment where advertisement content is restructured to maximise
+  simulated cognitive engagement. Cognitive metrics are grounded in Meta's
+  TRIBE v2 brain encoding model or a calibrated lightweight parametric
+  fallback. The agent manipulates ad segment ordering, emphasis, pacing,
+  and hook strategy to optimise attention, memory retention, and engagement
+  while satisfying structural constraints.
+
+author: "NeuroAd Team"
+license: MIT
+
 tags:
   - openenv
   - advertising
   - cognitive-science
   - tribev2
   - neuroscience
+  - nlp
+
+# ── OpenEnv required fields ────────────────────────────────────────────────
+observation_space:
+  type: structured
+  description: >
+    Ordered list of ad segments with per-segment cognitive metrics (attention,
+    memory, load, valence) and global engagement metrics plus step info.
+  fields:
+    - name: segments
+      type: list[AdSegment]
+      description: "Ordered ad segments with text, type, metrics, and position"
+    - name: cognitive_metrics
+      type: CognitiveMetrics
+      description: "Aggregated engagement, attention, memory, load, valence scores"
+    - name: step
+      type: int
+      description: "Current step number (0-indexed)"
+    - name: max_steps
+      type: int
+      description: "Maximum allowed steps for this episode"
+    - name: constraints
+      type: dict
+      description: "Task-specific constraints the agent must satisfy"
+
+action_space:
+  type: discrete_structured
+  description: >
+    Named operations applied to the ad scenario. Each action takes a
+    structured params dict. Eight operation types available.
+  operations:
+    - name: reorder
+      params: "new_order: list[int] — full index permutation"
+    - name: swap
+      params: "pos_a: int, pos_b: int — swap two segment positions"
+    - name: emphasize
+      params: "segment_id: str — increase emphasis level of a segment"
+    - name: de_emphasize
+      params: "segment_id: str — decrease emphasis level of a segment"
+    - name: modify_hook
+      params: "strategy: str — one of question|statistic|story|bold_claim"
+    - name: split_segment
+      params: "segment_id: str — split segment at midpoint"
+    - name: merge_segments
+      params: "segment_ids: list[str] — merge two adjacent segments"
+    - name: set_pacing
+      params: "segment_id: str, pacing: str — one of fast|medium|slow"
+
+reward:
+  type: dense
+  range: [-1.0, 1.0]
+  description: >
+    Multi-component dense reward signal. Non-sparse — every step returns
+    a non-zero signal. Components: attention_delta (0.25), memory_delta (0.25),
+    engagement_delta (0.20), load_penalty (0.15), repetition_penalty (0.10),
+    novelty_bonus (0.05), flow_bonus (0.10). Invalid actions return -0.20.
+
+tasks:
+  - id: task_1_easy
+    difficulty: easy
+    max_steps: 8
+    description: >
+      Improve attention and engagement for a simple productivity app ad.
+      Keep cognitive load under 0.75. Agent must reorder segments so the
+      hook leads, emphasise key content, and build a rising attention arc.
+    grader: programmatic
+    score_range: [0.0, 1.0]
+
+  - id: task_2_medium
+    difficulty: medium
+    max_steps: 10
+    description: >
+      Balance memory retention and emotional response for a health wearable ad.
+      Keep load under 0.72 and achieve a u-shaped attention arc. Requires
+      multi-step reasoning about emotional and mnemonic segment interplay.
+    grader: programmatic
+    score_range: [0.0, 1.0]
+
+  - id: task_3_hard
+    difficulty: hard
+    max_steps: 12
+    description: >
+      Maximise engagement under strict policy constraints for a regulated
+      compliance ad. Brand segment must be in top-2 positions, CTA must
+      be last, maximum 2 emphasis actions allowed, load must stay under 0.70.
+      Challenges frontier models with simultaneous optimisation + compliance.
+    grader: programmatic
+    score_range: [0.0, 1.0]
+
+# ── Grader specification ───────────────────────────────────────────────────
+grader:
+  type: programmatic
+  deterministic: true
+  scoring_rubric:
+    quality_score: 0.55
+    constraints_score: 0.20
+    flow_score: 0.10
+    diversity_score: 0.10
+    efficiency_score: 0.05
+
+# ── API endpoints ──────────────────────────────────────────────────────────
+api:
+  reset: "POST /reset"
+  step: "POST /step"
+  grade: "POST /grade"
+  state: "GET /state"
+  health: "GET /health"
+
+# ── Runtime requirements ───────────────────────────────────────────────────
+runtime:
+  min_vcpus: 1
+  min_ram_gb: 2
+  gpu_required: false
+  inference_timeout_minutes: 20
+  docker: true
+  huggingface_spaces: true
+
+# ── Environment variables for inference.py ────────────────────────────────
+inference_env_vars:
+  - name: API_BASE_URL
+    description: "The API endpoint for the LLM (e.g. https://router.huggingface.co/v1)"
+    required: true
+  - name: MODEL_NAME
+    description: "The model identifier to use for inference"
+    required: true
+  - name: HF_TOKEN
+    description: "Your Hugging Face / API key"
+    required: true
+  - name: NEUROAD_API_URL
+    description: "URL of the NeuroAd environment backend"
+    required: false
+    default: "http://127.0.0.1:7860"

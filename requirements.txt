@@ -3,6 +3,7 @@ uvicorn>=0.30
 pydantic>=2.7
 pyyaml>=6.0
 numpy>=1.26
+aiofiles>=23.2
 
 # Optional heavyweight dependency for GPU-backed prediction mode.
 # Install separately when model integration starts:
