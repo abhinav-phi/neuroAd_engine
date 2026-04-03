@@ -124,6 +124,7 @@ class EnvState(BaseModel):
 
     scenario: AdScenario = Field(...)
     cognitive_metrics: CognitiveMetrics = Field(...)
+    simulation_mode: Literal["tribev2", "parametric"] = Field(default="parametric")
     step: int = Field(...)
     max_steps: int = Field(...)
     task_id: str = Field(...)

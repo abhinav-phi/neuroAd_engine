@@ -1,10 +1,10 @@
 # neuroAd_engine
 
-Hackathon project for cognitive ad testing using Meta's TRIBE v2 as the scientific grounding for simulated ad-response metrics.
+Hackathon project for cognitive ad testing using neuroscience-grounded signals.
 
-## Goal
+## What It Does
 
-Build an ad testing site where advertisement text can be evaluated for likely cognitive response:
+The backend simulates ad-response metrics for:
 
 - attention
 - memory retention
@@ -12,45 +12,97 @@ Build an ad testing site where advertisement text can be evaluated for likely co
 - emotional valence
 - engagement
 
-The system supports two operating modes:
+It supports dual mode execution:
 
-1. `TRIBE v2 mode`
-   Uses the `facebook/tribev2` model from Hugging Face to predict brain-region activity and map it to ad metrics.
-2. `Parametric fallback mode`
-   Uses lightweight formulas calibrated against TRIBE v2 outputs so the project can still run on CPU or in constrained demos.
+1. TRIBE-like mode when model + adapter are available
+2. Parametric calibrated fallback mode for lightweight CPU demos
+
+## API Flow
+
+Primary judge flow:
+
+1. `POST /reset`
+2. `POST /step` (multiple times)
+3. `POST /grade`
+
+Other utility endpoints:
+
+- `GET /health`
+- `GET /state`
+- `POST /tribe_predict`
+
+## Quick Start (Backend)
+
+```bash
+python -m pip install -r requirements.txt
+uvicorn src.app:app --host 0.0.0.0 --port 7860
+```
+
+Optional TRIBE dependency:
+
+```bash
+pip install git+https://github.com/facebookresearch/tribev2.git
+```
+
+Then enable it:
+
+```bash
+set USE_TRIBEV2=true
+```
+
+## Run Judge Runner
+
+`inference.py` executes easy/medium/hard tasks through `/reset -> /step -> /grade`.
+
+```bash
+python inference.py
+```
+
+Optional env vars:
+
+- `NEUROAD_API_URL` (default: `http://127.0.0.1:7860`)
+- `OPENAI_API_KEY` and `OPENAI_MODEL` for LLM-guided action planning
+
+## Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+To hit real backend, set `REACT_APP_API_URL` before running frontend.
+
+## Docker
+
+```bash
+docker build -t neuroad .
+docker run -p 7860:7860 neuroad
+```
+
+Optional TRIBE install at build time:
+
+```bash
+docker build --build-arg INSTALL_TRIBEV2=true -t neuroad-tribe .
+```
 
 ## Repository Layout
 
 ```text
-docs/           Project context, architecture notes, and member ownership
-src/            Shared backend source for environment, simulator, reward, and API
-tests/          Shared test suite
-calibration/    Offline calibration scripts and notes for TRIBE v2 alignment
-frontend/       Placeholder for the ad testing web UI
-scripts/        Utility scripts for setup and local workflows
-data/           Example inputs or local-only assets
+docs/           Context + ownership notes
+src/            Backend models, env, simulator, reward, grader, API
+tests/          Python tests
+calibration/    Coefficients + calibration tooling
+frontend/       React/Vite UI
+examples/       Example run artifacts
+scripts/        Utility scripts
+data/           Local assets / placeholder data
 ```
 
-## Team Structure
+## Team Ownership
 
-- Member A: environment architect and API foundation
-- Member B: simulator, TRIBE v2 bridge, and reward integration
-- Member C: frontend / agent / product-facing flow
+- Member A: environment architect + API foundation
+- Member B: simulator + reward + grading + bridge
+- Member C: product flow + deployment + runner artifacts
 
-Detailed ownership is documented in [`docs/member-ownership.md`](C:\Users\prabhat\OneDrive\Desktop\codingbase\OPEN SOURCE\NeuroAd\docs\member-ownership.md).
-
-## Immediate Build Order
-
-1. Define shared Pydantic models in `src/models.py`
-2. Implement simulator interfaces and TRIBE v2 bridge
-3. Implement environment state and step logic
-4. Expose API endpoints in `src/app.py`
-5. Connect the frontend to the API
-6. Calibrate fallback formulas against TRIBE v2 outputs
-
-## Notes From The PDFs
-
-- TRIBE v2 is the scientific anchor, not just a branding choice.
-- The live demo should remain lightweight, so dual-mode support is important.
-- Member B owns the core bridge between raw brain activation outputs and ad metrics.
-- The shared repo structure should keep member ownership clear while preserving common contracts.
+See [docs/member-ownership.md](docs/member-ownership.md) for details.

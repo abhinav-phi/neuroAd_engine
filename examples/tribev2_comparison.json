@@ -1,0 +1,19 @@
+{
+  "description": "Example offline comparison between TRIBE-backed and parametric simulation outputs.",
+  "task_id": "task_1_easy",
+  "segment_count": 5,
+  "tribev2": {
+    "simulation_source": "tribev2",
+    "engagement_score": 0.71,
+    "attention_flow": "rising"
+  },
+  "parametric": {
+    "simulation_source": "parametric",
+    "engagement_score": 0.68,
+    "attention_flow": "rising"
+  },
+  "delta": {
+    "engagement_score": 0.03,
+    "note": "Small deltas are expected after calibration."
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "task_id": "task_1_easy",
+  "steps_executed": 5,
+  "actions": [
+    {"operation": "reorder", "params": {"new_order": [2, 0, 1, 3, 4]}},
+    {"operation": "emphasize", "params": {"segment_id": "seg_hook_2"}},
+    {"operation": "set_pacing", "params": {"segment_id": "seg_feature_0", "pacing": "slow"}},
+    {"operation": "swap", "params": {"pos_a": 1, "pos_b": 2}},
+    {"operation": "de_emphasize", "params": {"segment_id": "seg_data_1"}}
+  ],
+  "grade": {
+    "score": 0.78,
+    "task_id": "task_1_easy",
+    "steps_taken": 5
+  }
+}

@@ -54,6 +54,7 @@ DEFAULT_COEFFICIENTS: dict = {
         "position_bonus_top2": 0.06,   # primacy boost
         "position_bonus_last": 0.04,   # recency boost (last segment)
         "hook_bonus": 0.10,            # hook segment type is designed to grab attention
+        "hook_primacy_synergy": 0.03,  # extra gain when a hook is placed in top-2
         "number_bonus": 0.05,          # numeric evidence anchors attention (Kahneman)
         "question_bonus": 0.06,        # open questions create cognitive engagement
         "emphasis_bonus_per_level": 0.03,
@@ -146,6 +147,11 @@ def _compute_attention_score(
         position_bonus = attention_c.get("position_bonus_last", 0.04)  # recency
 
     hook_bonus = attention_c["hook_bonus"] if segment.segment_type == "hook" else 0.0
+    hook_primacy_bonus = (
+        attention_c.get("hook_primacy_synergy", 0.03)
+        if segment.segment_type == "hook" and seg_idx < 2
+        else 0.0
+    )
     number_bonus = attention_c["number_bonus"] if segment.has_number else 0.0
     question_bonus = attention_c["question_bonus"] if segment.has_question else 0.0
     emphasis_bonus = attention_c["emphasis_bonus_per_level"] * segment.emphasis_level
@@ -160,6 +166,7 @@ def _compute_attention_score(
         attention_c["base"]
         + position_bonus
         + hook_bonus
+        + hook_primacy_bonus
         + number_bonus
         + question_bonus
         + emphasis_bonus
@@ -275,6 +282,79 @@ def _compute_engagement(
 
 
 # ---------------------------------------------------------------------------
+# Public compute API (spec-facing wrappers)
+# ---------------------------------------------------------------------------
+
+def compute_attention(scenario: AdScenario, coefficients: dict | None = None) -> list[float]:
+    """Compute per-segment attention scores for a scenario."""
+    coeff = coefficients or load_parametric_coefficients()
+    attention_c = coeff["attention"]
+    n = len(scenario.segments)
+    return [_compute_attention_score(idx, n, seg, attention_c) for idx, seg in enumerate(scenario.segments)]
+
+
+def compute_memory(
+    scenario: AdScenario,
+    attention_scores: list[float] | None = None,
+    coefficients: dict | None = None,
+) -> list[float]:
+    """Compute per-segment memory retention scores for a scenario."""
+    coeff = coefficients or load_parametric_coefficients()
+    memory_c = coeff["memory"]
+    attn = attention_scores if attention_scores is not None else compute_attention(scenario, coefficients=coeff)
+    n = len(scenario.segments)
+    return [_compute_memory_score(idx, n, seg, attn[idx], memory_c) for idx, seg in enumerate(scenario.segments)]
+
+
+def compute_cognitive_load(scenario: AdScenario, coefficients: dict | None = None) -> float:
+    """Compute scenario-level cognitive load."""
+    coeff = coefficients or load_parametric_coefficients()
+    return _compute_cognitive_load(scenario, coeff["load"])
+
+
+def compute_emotional_valence(scenario: AdScenario, coefficients: dict | None = None) -> float:
+    """Compute scenario-level emotional valence in [-1, 1]."""
+    coeff = coefficients or load_parametric_coefficients()
+    return _compute_emotional_valence(scenario, coeff["emotional_valence"])
+
+
+def compute_attention_flow(attention_scores: list[float]) -> str:
+    """Classify attention curve shape."""
+    return classify_attention_flow(attention_scores)
+
+
+def compute_composite_engagement(
+    attention_scores: list[float],
+    memory_retention: list[float],
+    cognitive_load: float,
+    emotional_valence: float,
+    coefficients: dict | None = None,
+) -> float:
+    """Compute final composite engagement score."""
+    coeff = coefficients or load_parametric_coefficients()
+    return _compute_engagement(
+        attention_scores,
+        memory_retention,
+        emotional_valence,
+        cognitive_load,
+        coeff["engagement"],
+    )
+
+
+def compute_novelty(scenario: AdScenario) -> float:
+    """Compute simple narrative novelty from segment-type diversity and lexical variety."""
+    if not scenario.segments:
+        return 0.0
+
+    type_diversity = len({seg.segment_type for seg in scenario.segments}) / max(1, len(scenario.segments))
+    words: list[str] = []
+    for seg in scenario.segments:
+        words.extend([w.strip(".,!?;:\"'()[]{}-").lower() for w in seg.content.split() if w.strip()])
+    lexical_diversity = len(set(words)) / max(1, len(words))
+    return _clamp(type_diversity * 0.55 + lexical_diversity * 0.45, 0.0, 1.0)
+
+
+# ---------------------------------------------------------------------------
 # Parametric brain response builder (for observation enrichment)
 # ---------------------------------------------------------------------------
 
@@ -359,29 +439,18 @@ def simulate_parametric(
       - Brain response included for rich observation data
     """
     coeff = coefficients or load_parametric_coefficients()
-    attention_c = coeff["attention"]
-    memory_c = coeff["memory"]
-    load_c = coeff["load"]
-    valence_c = coeff["emotional_valence"]
-    engagement_c = coeff["engagement"]
-
-    n = len(scenario.segments)
-    attention_scores: list[float] = []
-    memory_retention: list[float] = []
-
-    for idx, seg in enumerate(scenario.segments):
-        attn = _compute_attention_score(idx, n, seg, attention_c)
-        attention_scores.append(attn)
-
-        mem = _compute_memory_score(idx, n, seg, attn, memory_c)
-        memory_retention.append(mem)
-
-    cognitive_load = _compute_cognitive_load(scenario, load_c)
-    emotional_valence = _compute_emotional_valence(scenario, valence_c)
-    engagement_score = _compute_engagement(
-        attention_scores, memory_retention, emotional_valence, cognitive_load, engagement_c
+    attention_scores = compute_attention(scenario, coefficients=coeff)
+    memory_retention = compute_memory(scenario, attention_scores=attention_scores, coefficients=coeff)
+    cognitive_load = compute_cognitive_load(scenario, coefficients=coeff)
+    emotional_valence = compute_emotional_valence(scenario, coefficients=coeff)
+    engagement_score = compute_composite_engagement(
+        attention_scores,
+        memory_retention,
+        cognitive_load,
+        emotional_valence,
+        coefficients=coeff,
     )
-    attention_flow = classify_attention_flow(attention_scores)
+    attention_flow = compute_attention_flow(attention_scores)
 
     brain_response = _build_parametric_brain_response(
         attention_scores=attention_scores,

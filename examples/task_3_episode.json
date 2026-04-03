@@ -1,0 +1,19 @@
+{
+  "task_id": "task_3_hard",
+  "steps_executed": 8,
+  "actions": [
+    {"operation": "reorder", "params": {"new_order": [2, 1, 0, 3, 4, 5]}},
+    {"operation": "emphasize", "params": {"segment_id": "seg_brand_1"}},
+    {"operation": "set_pacing", "params": {"segment_id": "seg_comparison_3", "pacing": "slow"}},
+    {"operation": "swap", "params": {"pos_a": 2, "pos_b": 3}},
+    {"operation": "emphasize", "params": {"segment_id": "seg_emotional_4"}},
+    {"operation": "modify_hook", "params": {"strategy": "statistic"}},
+    {"operation": "de_emphasize", "params": {"segment_id": "seg_data_2"}},
+    {"operation": "set_pacing", "params": {"segment_id": "seg_feature_0", "pacing": "medium"}}
+  ],
+  "grade": {
+    "score": 0.69,
+    "task_id": "task_3_hard",
+    "steps_taken": 8
+  }
+}
