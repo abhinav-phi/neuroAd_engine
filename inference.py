@@ -3,7 +3,7 @@
 
 Runs the full evaluation loop for each task:
 1) /reset
-2) multiple /step  
+2) multiple /step
 3) /grade
 
 Environment variables (required by OpenEnv spec):
@@ -24,12 +24,14 @@ import time
 from typing import Any
 from urllib import error, request
 
-# ── Environment API (the RL env backend) ───────────────────────────────────
+from openai import OpenAI
+
+# -- Environment API (the RL env backend) -----------------------------------
 API_BASE = os.environ.get("NEUROAD_API_URL", "http://127.0.0.1:7860").rstrip("/")
 API_TIMEOUT_SECONDS = float(os.environ.get("API_TIMEOUT_SECONDS", "20"))
 API_RETRIES = int(os.environ.get("API_RETRIES", "3"))
 
-# ── LLM inference credentials (OpenEnv spec required vars) ─────────────────
+# -- LLM inference credentials (OpenEnv spec required vars) ------------------
 API_BASE_URL = os.environ.get("API_BASE_URL", "").rstrip("/")
 MODEL_NAME = os.environ.get("MODEL_NAME", "")
 HF_TOKEN = os.environ.get("HF_TOKEN", "")
@@ -68,6 +70,7 @@ def _request_json(
     retries: int,
     timeout_s: float,
 ) -> dict[str, Any]:
+    """Make HTTP requests to the RL environment backend using urllib."""
     final_error: Exception | None = None
     body = json.dumps(payload).encode("utf-8") if payload is not None else None
     req_headers = {"Content-Type": "application/json"}
@@ -90,6 +93,7 @@ def _request_json(
 
 
 def api_call(method: str, path: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Call the RL environment REST API."""
     return _request_json(
         method=method,
         url=f"{API_BASE}{path}",
@@ -145,23 +149,33 @@ def _safe_parse_action(raw_text: str) -> dict[str, Any] | None:
 
 
 class LLMActionPlanner:
-    """Plans actions using OpenAI-compatible API (HuggingFace, OpenAI, etc.)."""
+    """Plans actions using the OpenAI Python client (HuggingFace, OpenAI, etc.)."""
 
     def __init__(self) -> None:
         self.enabled = bool(_LLM_API_KEY) and bool(_LLM_BASE_URL)
+        self.client: OpenAI | None = None
+
         if self.enabled:
+            # Initialise the OpenAI client. Works with OpenAI-compatible endpoints.
+            self.client = OpenAI(
+                api_key=_LLM_API_KEY,
+                base_url=_LLM_BASE_URL,
+                timeout=LLM_TIMEOUT_SECONDS,
+            )
             print(f"[LLM] Using model={_LLM_MODEL} at base_url={_LLM_BASE_URL}")
         else:
-            print("[LLM] No API key/base URL configured — using heuristic planner only.")
+            print("[LLM] No API key/base URL configured - using heuristic planner only.")
 
     def _call_llm(self, prompt: str) -> str:
-        """Call an OpenAI-compatible chat completions endpoint."""
-        chat_url = f"{_LLM_BASE_URL.rstrip('/')}/chat/completions"
-        payload = {
-            "model": _LLM_MODEL,
-            "temperature": 0,
-            "max_tokens": 256,
-            "messages": [
+        """Call the LLM using the OpenAI Python client."""
+        if self.client is None:
+            raise RuntimeError("OpenAI client is not initialised.")
+
+        response = self.client.chat.completions.create(
+            model=_LLM_MODEL,
+            temperature=0,
+            max_tokens=256,
+            messages=[
                 {
                     "role": "system",
                     "content": (
@@ -174,23 +188,15 @@ class LLMActionPlanner:
                 },
                 {"role": "user", "content": prompt},
             ],
-        }
-        headers: dict[str, str] = {"Authorization": f"Bearer {_LLM_API_KEY}"}
-        response = _request_json(
-            method="POST",
-            url=chat_url,
-            payload=payload,
-            headers=headers,
-            retries=LLM_RETRIES,
-            timeout_s=LLM_TIMEOUT_SECONDS,
         )
-        try:
-            return response["choices"][0]["message"]["content"]
-        except Exception as exc:
-            raise RuntimeError(f"Unexpected LLM response format: {exc}") from exc
+
+        content = response.choices[0].message.content
+        if content is None:
+            raise RuntimeError("LLM returned empty content.")
+        return content
 
     def plan(self, observation: dict[str, Any], task_id: str) -> dict[str, Any] | None:
-        if not self.enabled:
+        if not self.enabled or self.client is None:
             return None
 
         # Summarise observation to keep prompt short (fits small context windows)
@@ -241,7 +247,7 @@ def _find_index_by_id(segments: list[dict[str, Any]], seg_id: str) -> int | None
 
 
 def _heuristic_action(observation: dict[str, Any]) -> dict[str, Any]:
-    """Rule-based fallback planner — no LLM required."""
+    """Rule-based fallback planner - no LLM required."""
     segments: list[dict[str, Any]] = observation.get("segments", [])
     metrics: dict[str, Any] = observation.get("cognitive_metrics", {})
     constraints: dict[str, Any] = observation.get("constraints", {})
@@ -256,7 +262,7 @@ def _heuristic_action(observation: dict[str, Any]) -> dict[str, Any]:
     hook_idx = next((i for i, s in enumerate(segments) if s.get("segment_type") == "hook"), None)
     cta_idx = next((i for i, s in enumerate(segments) if s.get("segment_type") == "cta"), None)
 
-    # Priority 1: Shape narrative — hook first, CTA last
+    # Priority 1: Shape narrative - hook first, CTA last
     desired_order = list(range(len(segments)))
     changed = False
     if hook_idx is not None and hook_idx != 0:
@@ -275,14 +281,13 @@ def _heuristic_action(observation: dict[str, Any]) -> dict[str, Any]:
     # Priority 2: Reduce load if too high
     load_limit = float(constraints.get("max_cognitive_load", 0.72))
     if cognitive_load > load_limit and segments:
-        # Find most complex segment and slow its pacing
         target = max(segments, key=lambda s: float(s.get("complexity_score", 0.0)))
         return {
             "operation": "set_pacing",
             "params": {"segment_id": target.get("id"), "pacing": "slow"},
         }
 
-    # Priority 3: Emphasise the weakest attention segment
+    # Priority 3: Emphasize the weakest attention segment
     if attention and len(attention) == len(segments):
         low_idx = min(range(len(attention)), key=lambda i: attention[i])
         return {
@@ -336,7 +341,7 @@ def _coerce_action(observation: dict[str, Any], action: dict[str, Any] | None) -
                 return _heuristic_action(observation)
             return {"operation": "swap", "params": {"pos_a": idx_a, "pos_b": idx_b}}
 
-    # Normalise camelCase → snake_case for emphasize/de_emphasize
+    # Normalise camelCase -> snake_case for emphasize/de_emphasize
     if op == "de_emphasize" and "segmentId" in params:
         return {"operation": "de_emphasize", "params": {"segment_id": params["segmentId"]}}
     if op == "emphasize" and "segmentId" in params:
@@ -403,7 +408,7 @@ def run_task(task_id: str, planner: LLMActionPlanner) -> dict[str, Any]:
         last_info = info
 
         history.append({"action": action, "reward": reward})
-        print(f"  → reward={reward:.4f}, done={done}")
+        print(f"  -> reward={reward:.4f}, done={done}")
 
         if not isinstance(observation, dict):
             raise RuntimeError(f"/step returned invalid observation for task {task_id}")
@@ -438,7 +443,7 @@ def run_task(task_id: str, planner: LLMActionPlanner) -> dict[str, Any]:
 
 def main() -> None:
     print("=" * 60)
-    print("NeuroAd OpenEnv — Inference Runner")
+    print("NeuroAd OpenEnv - Inference Runner")
     print(f"  env_url   : {API_BASE}")
     print(f"  llm_url   : {_LLM_BASE_URL}")
     print(f"  model     : {_LLM_MODEL}")

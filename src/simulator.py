@@ -22,6 +22,7 @@ from statistics import mean
 
 from src.models import (
     AdScenario,
+    AdSegment,
     BrainRegionActivation,
     BrainResponse,
     CognitiveMetrics,
@@ -504,3 +505,51 @@ def simulate_with_tribev2(
         segment_count=segment_count,
         source="tribev2",
     )
+
+
+def _scenario_from_text(text: str) -> AdScenario:
+    words = [w for w in text.split() if w.strip()]
+    if not words:
+        words = ["placeholder", "ad", "content"]
+    chunk_size = max(1, len(words) // 3)
+    chunks = []
+    for i in range(0, len(words), chunk_size):
+        chunks.append(" ".join(words[i : i + chunk_size]))
+    if len(chunks) < 3:
+        chunks = chunks + ["Support your claim with data.", "Start your free trial now."]
+    segments = []
+    types = ["hook", "feature", "cta"]
+    for idx, content in enumerate(chunks[:3]):
+        segment_type = types[idx] if idx < len(types) else "feature"
+        segments.append(
+            AdSegment(
+                id=f"text_seg_{idx}",
+                content=content,
+                segment_type=segment_type,  # type: ignore[arg-type]
+                word_count=max(1, len(content.split())),
+                complexity_score=0.35 + 0.05 * idx,
+                emotional_intensity=0.35 + 0.07 * idx,
+                has_question="?" in content,
+                has_number=any(ch.isdigit() for ch in content),
+                position=idx,
+            )
+        )
+    return AdScenario(segments=segments, cta_segment_id=segments[-1].id if segments else None)
+
+
+def predict_brain_response(
+    tribe_model: object,
+    text: str,
+    adapter: TribeAdapter | None = None,
+) -> BrainResponse:
+    """Direct helper for TRIBE-mode brain response prediction from ad text.
+
+    If strict adapter integration is unavailable or fails, returns parametric
+    fallback brain response derived from the text.
+    """
+    scenario = _scenario_from_text(text)
+    metrics = simulate_with_tribev2(scenario=scenario, tribe_model=tribe_model, adapter=adapter)
+    if metrics.brain_response is None:
+        fallback = simulate_parametric(scenario)
+        return fallback.brain_response if fallback.brain_response is not None else BrainResponse(source="parametric")
+    return metrics.brain_response

@@ -2,7 +2,7 @@
 
 from src.env import CognitiveAdEnv
 from src.models import Action
-from src.simulator import simulate_parametric, simulate_with_tribev2
+from src.simulator import predict_brain_response, simulate_parametric, simulate_with_tribev2
 from src.tasks import TASK_1_EASY, build_scenario
 from src.tribe_bridge import TribeRoiTimeseries
 
@@ -63,3 +63,19 @@ def test_simulate_with_tribe_adapter_failure_falls_back() -> None:
     assert fallback.simulation_source == "parametric"
     assert fallback.brain_response is not None
     assert fallback.brain_response.source == "parametric"
+
+
+def test_predict_brain_response_returns_output_in_both_modes() -> None:
+    direct = predict_brain_response(
+        tribe_model=object(),
+        text="Would you save 20 percent time if setup took only 5 minutes?",
+        adapter=_GoodAdapter(),
+    )
+    assert direct.source == "tribev2"
+
+    fallback = predict_brain_response(
+        tribe_model=object(),
+        text="Simple ad text fallback path",
+        adapter=_BadAdapter(),
+    )
+    assert fallback.source == "parametric"
