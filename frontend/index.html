@@ -1,80 +1,13 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>NeuroAd Environment Viewer</title>
-    <link rel="stylesheet" href="./styles.css" />
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CogniFlow — Cognitive Ad Testing</title>
   </head>
   <body>
-    <main class="app">
-      <header class="panel hero">
-        <h1>NeuroAd Environment Viewer</h1>
-        <p>Quick UI to run reset/step/state and visualize rewards and metrics.</p>
-      </header>
-
-      <section class="panel controls">
-        <div class="row">
-          <label for="apiBase">API Base URL</label>
-          <input id="apiBase" type="text" value="http://127.0.0.1:8000" />
-        </div>
-        <div class="row">
-          <label for="taskId">Task</label>
-          <select id="taskId">
-            <option value="task_1_easy">task_1_easy</option>
-            <option value="task_2_medium">task_2_medium</option>
-            <option value="task_3_hard">task_3_hard</option>
-          </select>
-          <button id="resetBtn">Reset</button>
-          <button id="stateBtn">State</button>
-        </div>
-      </section>
-
-      <section class="panel action">
-        <h2>Take Action</h2>
-        <div class="grid">
-          <div>
-            <label for="operation">Operation</label>
-            <select id="operation">
-              <option value="swap">swap</option>
-              <option value="reorder">reorder</option>
-              <option value="emphasize">emphasize</option>
-              <option value="de_emphasize">de_emphasize</option>
-              <option value="modify_hook">modify_hook</option>
-              <option value="split_segment">split_segment</option>
-              <option value="merge_segments">merge_segments</option>
-              <option value="set_pacing">set_pacing</option>
-            </select>
-          </div>
-          <div>
-            <label for="params">Params (JSON)</label>
-            <textarea id="params" rows="4">{ "pos_a": 0, "pos_b": 1 }</textarea>
-          </div>
-        </div>
-        <button id="stepBtn">Step</button>
-      </section>
-
-      <section class="panel status">
-        <h2>Status</h2>
-        <div id="statusText">No request yet.</div>
-      </section>
-
-      <section class="panel summary">
-        <h2>Episode Summary</h2>
-        <div class="metrics" id="summaryMetrics"></div>
-      </section>
-
-      <section class="panel segments">
-        <h2>Segments</h2>
-        <div id="segmentsList"></div>
-      </section>
-
-      <section class="panel json">
-        <h2>Last Response JSON</h2>
-        <pre id="jsonOutput">{}</pre>
-      </section>
-    </main>
-
-    <script src="./app.js"></script>
+    <div id="root"></div>
+    <script type="module" src="/src/index.tsx"></script>
   </body>
 </html>

@@ -1,0 +1,227 @@
+/* --- MANAGED FONT IMPORTS START (do not edit manually) --- */
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300;1,400;1,500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Geist:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Geist+Mono:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap');
+
+/* --- MANAGED FONT IMPORTS END --- */
+
+/* @import url() FONT IMPORTS MUST ALWAYS BE AT THE VERY TOP OF THIS FILE, ABOVE THE TAILWIND IMPORTS — DO NOT DELETE THIS COMMENT */
+
+/* CRITICAL: THE FOLLOWING TAILWIND IMPORTS MUST NEVER BE DELETED OR REORDERED — DO NOT DELETE THIS COMMENT */
+@import 'tailwindcss/base';
+@import 'tailwindcss/components';
+@import 'tailwindcss/utilities';
+
+/* END TAILWIND IMPORTS — ALL OTHER CSS MUST GO BELOW THIS LINE */
+
+@custom-variant dark (&:is(.dark *));
+:root {
+  /* Shadcn tokens */
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+  /* CogniFlow Design Tokens */
+  --bg-base: #080C14;
+  --bg-surface: #0E1520;
+  --bg-elevated: #141E2E;
+  --border-subtle: #1C2A3A;
+  --border-active: rgba(0, 212, 255, 0.13);
+  --accent-cyan: #00D4FF;
+  --accent-cyan-dim: rgba(0, 212, 255, 0.2);
+  --accent-cyan-glow: rgba(0, 212, 255, 0.08);
+  --accent-gold: #FFB800;
+  --accent-gold-dim: rgba(255, 184, 0, 0.13);
+  --accent-purple: #8B5CF6;
+  --status-good: #10E88A;
+  --status-warn: #FFB800;
+  --status-bad: #FF4D6A;
+  --status-neutral: #64748B;
+  --text-primary: #F0F6FF;
+  --text-secondary: #7A91A8;
+  --text-muted: #3D5166;
+  --text-mono: #00D4FF;
+  --font-display: 'Sora', sans-serif;
+  --font-mono: 'DM Mono', monospace;
+  --font-body: 'Sora', sans-serif;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+  --shadow-card: 0 0 0 1px var(--border-subtle), 0 4px 24px rgba(0,0,0,0.4);
+  --shadow-glow-cyan: 0 0 12px rgba(0,212,255,0.25);
+  --shadow-glow-gold: 0 0 12px rgba(255,184,0,0.25);
+  --transition-fast: 150ms ease;
+  --transition-med: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 500ms ease;
+}
+/* Animations */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 8px var(--accent-cyan-dim); }
+  50% { box-shadow: 0 0 20px var(--accent-cyan); }
+}
+@keyframes pulseGlowGold {
+  0%, 100% { box-shadow: 0 0 8px var(--accent-gold-dim); }
+  50% { box-shadow: 0 0 20px var(--accent-gold); }
+}
+@keyframes shimmer {
+  from { background-position: -200% 0; }
+  to { background-position: 200% 0; }
+}
+@keyframes dotPulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.8); opacity: 0; }
+}
+@keyframes barGrow {
+  from { width: 0; }
+  to { width: var(--target-width); }
+}
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.9); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes confettiFall {
+  0% { transform: translateY(-20px) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(80px) rotate(360deg); opacity: 0; }
+}
+@keyframes arcDraw {
+  from { stroke-dashoffset: 251.2; }
+  to { stroke-dashoffset: var(--target-offset); }
+}
+@keyframes countUp {
+  from { opacity: 0.4; }
+  to { opacity: 1; }
+}
+@keyframes cardSlideIn {
+  from { opacity: 0; transform: translateX(-12px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes glowPulse {
+  0%, 100% { border-color: var(--accent-cyan); box-shadow: 0 0 8px var(--accent-cyan-dim); }
+  50% { border-color: var(--accent-cyan); box-shadow: 0 0 24px rgba(0,212,255,0.5); }
+}
+@keyframes deltaFadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+/* Global styles */
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background-color: var(--bg-base);
+  font-family: var(--font-body);
+  color: var(--text-primary);
+  overflow: hidden;
+}
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-surface);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--accent-cyan-dim);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-cyan);
+}
+/* Shimmer skeleton */
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--bg-elevated) 25%,
+    rgba(255,255,255,0.04) 50%,
+    var(--bg-elevated) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+/* Glass card */
+.glass-card {
+  background: rgba(14, 21, 32, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+}
+/* Focus ring */
+*:focus-visible {
+  outline: 2px solid var(--accent-cyan);
+  outline-offset: 2px;
+}
+/* Drag ghost */
+.drag-ghost {
+  opacity: 0.6;
+  transform: scale(1.02);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6), 0 0 0 1px var(--accent-cyan);
+}
+/* Metric value color classes */
+.metric-good { color: var(--status-good); }
+.metric-warn { color: var(--status-warn); }
+.metric-bad { color: var(--status-bad); }
+.metric-neutral { color: var(--status-neutral); }
+/* Recharts overrides */
+.recharts-tooltip-wrapper {
+  outline: none !important;
+}
+.recharts-default-tooltip {
+  background: var(--bg-elevated) !important;
+  border: 1px solid var(--border-subtle) !important;
+  border-radius: var(--radius-sm) !important;
+  font-family: var(--font-mono) !important;
+  font-size: 11px !important;
+  color: var(--text-primary) !important;
+}
