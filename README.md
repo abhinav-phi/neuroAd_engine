@@ -1,3 +1,14 @@
+---
+title: neuroAd_engine
+emoji: 🚀
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
+
 # NeuroAd — Cognitive Ad Testing Environment
 
 > **OpenEnv Hackathon Round 1 Submission**
@@ -365,3 +376,4 @@ All endpoints return JSON. See `http://localhost:7860/docs` for interactive docs
 ## License
 
 MIT — see [LICENSE](LICENSE)
+
