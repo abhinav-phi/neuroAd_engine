@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 from backend.src.env import CognitiveAdEnv
 from backend.src.models import Action, AdScenario, AdSegment
-from src.simulator import simulate_parametric, simulate_with_tribev2
+from backend.src.simulator import simulate_parametric, simulate_with_tribev2
 
 
 class ResetRequest(BaseModel):

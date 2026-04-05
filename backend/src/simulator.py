@@ -27,7 +27,7 @@ from backend.src.models import (
     BrainResponse,
     CognitiveMetrics,
 )
-from src.tribe_bridge import (
+from backend.src.tribe_bridge import (
     TribeAdapter,
     TribeAdapterError,
     classify_attention_flow,
