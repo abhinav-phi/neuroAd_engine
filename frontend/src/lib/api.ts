@@ -21,6 +21,7 @@ import {
 
 const BASE_URL =
   (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_URL) ||
+  (typeof process !== 'undefined' && process.env?.REACT_APP_API_URL) ||
   'https://abhi1haggu-neuroad-engine.hf.space';
 
 const USE_MOCK = false;
