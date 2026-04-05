@@ -14,9 +14,9 @@ import pytest
 # ---- Shared test infrastructure ---- #
 # These imports will work once Member A's files are also present
 try:
-    from src.env import CognitiveAdEnv
+    from backend.src.env import CognitiveAdEnv
     from src.grader import grade_episode, _normalize_delta
-    from src.models import Action, CognitiveMetrics
+    from backend.src.models import Action, CognitiveMetrics
     from src.reward import compute_reward, _compute_load_penalty, _compute_repetition_penalty, _compute_novelty_bonus
     from src.simulator import (
         DEFAULT_COEFFICIENTS,
@@ -159,7 +159,7 @@ class TestSimulatorSensitivity:
             "Maximum complexity should lower attention scores"
 
     def test_cognitive_load_increases_with_more_segments(self):
-        from src.models import AdSegment, AdScenario
+        from backend.src.models import AdSegment, AdScenario
 
         def make_scenario_with_n_segments(n: int) -> AdScenario:
             segs = []

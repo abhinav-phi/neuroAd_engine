@@ -7,7 +7,7 @@ from statistics import mean
 from typing import Literal
 
 from src.grader import grade_episode
-from src.models import Action, AdScenario, CognitiveMetrics, EnvState, GradeResult, Observation
+from backend.src.models import Action, AdScenario, CognitiveMetrics, EnvState, GradeResult, Observation
 from src.reward import compute_reward
 from src.simulator import simulate_parametric, simulate_with_tribev2
 from src.tasks import build_scenario, get_task_config

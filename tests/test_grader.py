@@ -1,7 +1,7 @@
 """Tests for grading and task-score expectations."""
 
 from src.grader import grade_episode
-from src.models import Action
+from backend.src.models import Action
 from src.simulator import simulate_parametric
 from src.tasks import TASK_1_EASY, build_scenario
 

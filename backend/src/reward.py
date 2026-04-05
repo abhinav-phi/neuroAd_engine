@@ -31,7 +31,7 @@ from __future__ import annotations
 
 from statistics import mean
 
-from src.models import CognitiveMetrics, RewardInfo
+from backend.src.models import CognitiveMetrics, RewardInfo
 
 
 def _clamp(value: float, low: float, high: float) -> float:

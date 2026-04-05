@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from statistics import mean
 from typing import Protocol
 
-from src.models import BrainRegionActivation, BrainResponse, CognitiveMetrics
+from backend.src.models import BrainRegionActivation, BrainResponse, CognitiveMetrics
 
 
 class TribeAdapterError(ValueError):

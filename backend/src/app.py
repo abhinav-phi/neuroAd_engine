@@ -8,8 +8,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from src.env import CognitiveAdEnv
-from src.models import Action, AdScenario, AdSegment
+from backend.src.env import CognitiveAdEnv
+from backend.src.models import Action, AdScenario, AdSegment
 from src.simulator import simulate_parametric, simulate_with_tribev2
 
 

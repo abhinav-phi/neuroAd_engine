@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-from src.models import AdScenario, AdSegment
+from backend.src.models import AdScenario, AdSegment
 
 
 def _segment(
