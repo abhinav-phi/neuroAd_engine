@@ -1,10 +1,10 @@
 """Tests for simulator behavior and TRIBE v2 fallback alignment."""
 
-from src.env import CognitiveAdEnv
-from src.models import Action
-from src.simulator import predict_brain_response, simulate_parametric, simulate_with_tribev2
-from src.tasks import TASK_1_EASY, build_scenario
-from src.tribe_bridge import TribeRoiTimeseries
+from backend.src.env import CognitiveAdEnv
+from backend.src.models import Action
+from backend.src.simulator import predict_brain_response, simulate_parametric, simulate_with_tribev2
+from backend.src.tasks import TASK_1_EASY, build_scenario
+from backend.src.tribe_bridge import TribeRoiTimeseries
 
 
 class _GoodAdapter:

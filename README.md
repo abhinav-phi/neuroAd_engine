@@ -1,3 +1,14 @@
+---
+title: neuroAd_engine
+emoji: 🚀
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
+
 # NeuroAd — Cognitive Ad Testing Environment
 
 > **OpenEnv Hackathon Round 1 Submission**
@@ -232,7 +243,7 @@ Run `python inference.py` to reproduce these scores.
 pip install -r requirements.txt
 
 # 2. Start the API server
-uvicorn src.app:app --host 0.0.0.0 --port 7860
+uvicorn backend.src.app:app --host 0.0.0.0 --port 7860
 
 # 3. Check health
 curl http://localhost:7860/health
@@ -243,7 +254,7 @@ curl http://localhost:7860/health
 ```bash
 # Backend
 pip install -r requirements.txt
-uvicorn src.app:app --host 0.0.0.0 --port 7860 &
+uvicorn backend.src.app:app --host 0.0.0.0 --port 7860 &
 
 # Frontend (in separate terminal)
 cd frontend
@@ -365,3 +376,4 @@ All endpoints return JSON. See `http://localhost:7860/docs` for interactive docs
 ## License
 
 MIT — see [LICENSE](LICENSE)
+

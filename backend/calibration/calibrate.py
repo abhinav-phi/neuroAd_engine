@@ -10,7 +10,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from src.simulator import DEFAULT_COEFFICIENTS
+from backend.src.simulator import DEFAULT_COEFFICIENTS
 
 
 def _build_payload(source_dataset: str, method: str) -> dict:
