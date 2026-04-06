@@ -25,13 +25,18 @@ def _parse_env_line(line: str) -> tuple[str, str] | None:
 
 
 def load_local_env() -> None:
-    env_path = Path(__file__).resolve().parent.parent / ".env"
-    if not env_path.exists():
-        return
+    candidate_paths = [
+        Path(__file__).resolve().parent.parent / ".env",
+        Path(__file__).resolve().parents[2] / ".env",
+    ]
 
-    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
-        parsed = _parse_env_line(raw_line)
-        if parsed is None:
+    for env_path in candidate_paths:
+        if not env_path.exists():
             continue
-        key, value = parsed
-        os.environ.setdefault(key, value)
+        for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+            parsed = _parse_env_line(raw_line)
+            if parsed is None:
+                continue
+            key, value = parsed
+            os.environ.setdefault(key, value)
+        return

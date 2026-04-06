@@ -7,8 +7,8 @@ from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
-from src import app as app_module
-from src.tribe_space import TribeSpaceClient, TribeSpaceError, normalize_space_analysis
+from backend.src import app as app_module
+from backend.src.tribe_space import TribeSpaceClient, TribeSpaceError, normalize_space_analysis
 
 
 class _FakeResponse:
@@ -108,7 +108,7 @@ def test_predict_text_warms_up_and_retries_on_503(monkeypatch) -> None:
 
     monkeypatch.setattr("requests.request", fake_request)
 
-    client = TribeSpaceClient(base_url="https://example-space.test")
+    client = TribeSpaceClient(base_url="https://example-space.test", api_token="")
     result = client.predict_text("retry transcript")
 
     assert result["score"] == 0.61

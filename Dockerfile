@@ -45,4 +45,4 @@ RUN pip install --no-cache-dir aiofiles
 EXPOSE 7860
 
 # Start uvicorn — serves both the API and the static frontend
-CMD ["uvicorn", "src.app:app", "--host", "0.0.0.0", "--port", "7860"]
+CMD ["uvicorn", "backend.src.app:app", "--host", "0.0.0.0", "--port", "7860"]

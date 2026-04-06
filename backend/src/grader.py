@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from statistics import mean
 
-from src.models import Action, CognitiveMetrics, GradeResult
+from backend.src.models import Action, CognitiveMetrics, GradeResult
 
 
 def _clamp(value: float, low: float, high: float) -> float:

@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from calibration.calibrate import _build_payload
-from src.simulator import DEFAULT_COEFFICIENTS, load_parametric_coefficients
+from backend.src.simulator import DEFAULT_COEFFICIENTS, load_parametric_coefficients
 
 
 def test_build_payload_has_required_sections() -> None:

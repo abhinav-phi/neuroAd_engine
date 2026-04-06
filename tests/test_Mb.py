@@ -14,11 +14,11 @@ import pytest
 # ---- Shared test infrastructure ---- #
 # These imports will work once Member A's files are also present
 try:
-    from src.env import CognitiveAdEnv
-    from src.grader import grade_episode, _normalize_delta
-    from src.models import Action, CognitiveMetrics
-    from src.reward import compute_reward, _compute_load_penalty, _compute_repetition_penalty, _compute_novelty_bonus
-    from src.simulator import (
+    from backend.src.env import CognitiveAdEnv
+    from backend.src.grader import grade_episode, _normalize_delta
+    from backend.src.models import Action, CognitiveMetrics
+    from backend.src.reward import compute_reward, _compute_load_penalty, _compute_repetition_penalty, _compute_novelty_bonus
+    from backend.src.simulator import (
         DEFAULT_COEFFICIENTS,
         _compute_attention_score,
         _compute_memory_score,
@@ -26,8 +26,8 @@ try:
         simulate_parametric,
         simulate_with_tribev2,
     )
-    from src.tasks import TASK_1_EASY, TASK_2_MEDIUM, TASK_3_HARD, build_scenario
-    from src.tribe_bridge import TribeRoiTimeseries
+    from backend.src.tasks import TASK_1_EASY, TASK_2_MEDIUM, TASK_3_HARD, build_scenario
+    from backend.src.tribe_bridge import TribeRoiTimeseries
     IMPORTS_OK = True
 except ImportError as e:
     IMPORTS_OK = False
@@ -159,7 +159,7 @@ class TestSimulatorSensitivity:
             "Maximum complexity should lower attention scores"
 
     def test_cognitive_load_increases_with_more_segments(self):
-        from src.models import AdSegment, AdScenario
+        from backend.src.models import AdSegment, AdScenario
 
         def make_scenario_with_n_segments(n: int) -> AdScenario:
             segs = []

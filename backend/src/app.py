@@ -3,19 +3,22 @@
 from __future__ import annotations
 
 import os
+from io import BytesIO
 from functools import lru_cache
 from pathlib import Path
 from uuid import uuid4
 
+import imageio.v3 as iio
 import numpy as np
 from fastapi import FastAPI, File, HTTPException, UploadFile
+from PIL import Image
 
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from src.env import CognitiveAdEnv, load_tribev2_model
-from src.models import Action, AdScenario, AdSegment, BrainRegionActivation, BrainResponse, CognitiveMetrics
-from src.simulator import simulate_parametric, simulate_with_tribev2
+from backend.src.env import CognitiveAdEnv
+from backend.src.models import Action, AdScenario, AdSegment, BrainRegionActivation, BrainResponse, CognitiveMetrics
+from backend.src.simulator import simulate_parametric, simulate_with_tribev2
 
 
 class ResetRequest(BaseModel):
@@ -42,7 +45,7 @@ UPLOAD_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 @lru_cache(maxsize=1)
 def _get_tribe_space_module():
-    from src import tribe_space as module
+    from backend.src import tribe_space as module
 
     return module
 
@@ -51,6 +54,23 @@ def _get_tribe_space_module():
 def _get_tribe_space_client():
     module = _get_tribe_space_module()
     return module.TribeSpaceClient()
+
+
+def _load_tribev2_model(cache_folder: str, features_to_use: list[str] | None = None) -> object:
+    from tribev2 import TribeModel  # type: ignore[import-not-found]
+
+    config_update = {"data.features_to_use": features_to_use} if features_to_use else None
+    try:
+        if config_update is not None:
+            return TribeModel.from_pretrained(
+                "facebook/tribev2",
+                cache_folder=cache_folder,
+                config_update=config_update,
+            )
+    except TypeError:
+        pass
+
+    return TribeModel.from_pretrained("facebook/tribev2", cache_folder=cache_folder)
 
 
 def _build_text_scenario(text: str) -> AdScenario:
@@ -268,10 +288,7 @@ def _ensure_tribe_model(features_to_use: list[str] | None = None) -> object:
     elif env.tribe_model is not None:
         return env.tribe_model
     try:
-        model = load_tribev2_model(
-            "./cache",
-            config_update={"data.features_to_use": features_to_use} if features_to_use else None,
-        )
+        model = _load_tribev2_model("./cache", features_to_use=features_to_use)
         if features_to_use == ["image"]:
             setattr(env, "tribe_image_model", model)
             return model
@@ -298,6 +315,15 @@ def _validate_video_upload(file: UploadFile) -> None:
     if suffix in allowed_suffixes:
         return
     raise HTTPException(status_code=400, detail="Please upload a supported video file.")
+
+
+def _write_image_as_video(raw_bytes: bytes, video_path: Path, fps: int = 6, duration_s: float = 1.5) -> None:
+    image = Image.open(BytesIO(raw_bytes)).convert("RGB")
+    frame = np.asarray(image)
+    frame_count = max(1, int(round(fps * duration_s)))
+    frames = np.repeat(frame[np.newaxis, ...], frame_count, axis=0)
+    video_path.parent.mkdir(parents=True, exist_ok=True)
+    iio.imwrite(video_path, frames, fps=fps)
 
 
 @app.get("/health")

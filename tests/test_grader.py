@@ -1,9 +1,9 @@
 """Tests for grading and task-score expectations."""
 
-from src.grader import grade_episode
-from src.models import Action
-from src.simulator import simulate_parametric
-from src.tasks import TASK_1_EASY, build_scenario
+from backend.src.grader import grade_episode
+from backend.src.models import Action
+from backend.src.simulator import simulate_parametric
+from backend.src.tasks import TASK_1_EASY, build_scenario
 
 
 def test_grader_score_is_normalized() -> None:

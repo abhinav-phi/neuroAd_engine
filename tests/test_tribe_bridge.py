@@ -1,6 +1,6 @@
 """Tests for strict TRIBE bridge validation and mapping."""
 
-from src.tribe_bridge import (
+from backend.src.tribe_bridge import (
     TribeAdapterError,
     TribeRoiTimeseries,
     map_tribe_roi_timeseries_to_metrics,
