@@ -5,7 +5,7 @@ pyyaml>=6.0
 numpy>=1.26
 aiofiles>=23.2
 openai>=1.40
-
-# Optional heavyweight dependency for GPU-backed prediction mode.
-# Install separately when model integration starts:
-# tribev2
+requests>=2.31
+imageio>=2.34
+imageio-ffmpeg>=0.4
+Pillow>=10.0

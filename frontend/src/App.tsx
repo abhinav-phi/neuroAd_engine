@@ -1,314 +1,300 @@
-import React, { useCallback, useEffect } from 'react';
-import { Sidebar } from './components/Sidebar';
-import { CenterPanel } from './components/CenterPanel';
-import { CognitiveMetricsPanel } from './components/CognitiveMetricsPanel';
-import { ActionPanel } from './components/ActionPanel';
-import { RewardStrip } from './components/RewardStrip';
-import { GradingModal } from './components/GradingModal';
-import { ToastContainer } from './components/ToastContainer';
-import { useAppState } from './lib/useAppState';
-import { TaskId, ActionType, ActionParams } from './lib/types';
+import React from 'react';
+import { Navbar } from './components/Navbar';
+import { AdUpload } from './components/AdUpload';
+import { AnalyzeButton } from './components/AnalyzeButton';
+import { LoadingOverlay } from './components/LoadingOverlay';
+import { ResultsDashboard } from './components/ResultsDashboard';
+import { useAdAnalysis } from './lib/useAdAnalysis';
+
 export function App() {
   const {
-    state,
-    dispatch,
-    handleReset,
-    handleStep,
-    handleGrade,
-    handleReorder,
-    addToast
-  } = useAppState();
-  const {
-    observation,
-    prevObservation,
-    stepHistory,
-    rewardHistory,
-    selectedTask,
-    selectedAction,
-    actionParams,
-    isLoading,
-    isDone,
-    gradingResult,
-    apiConnected,
-    showHeatmap,
-    showRewardStrip,
-    lastReward,
-    lastRewardBreakdown,
-    changedSegmentIds,
-    toasts
-  } = state;
-  // Keyboard shortcuts
-  useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement).tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-      if (e.key === 'r' || e.key === 'R') {
-        e.preventDefault();
-        handleReset();
-      }
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        if (observation && !isLoading) handleStep();
-      }
-    };
-    window.addEventListener('keydown', handleKey);
-    return () => window.removeEventListener('keydown', handleKey);
-  }, [handleReset, handleStep, observation, isLoading]);
-  const handleEmphasize = useCallback(
-    (id: string) => {
-      dispatch({
-        type: 'SET_SELECTED_ACTION',
-        payload: 'emphasize'
-      });
-      dispatch({
-        type: 'SET_ACTION_PARAMS',
-        payload: {
-          segmentId: id
-        }
-      });
-      handleStep('emphasize', {
-        segmentId: id
-      });
-    },
-    [dispatch, handleStep]
-  );
-  const handleDeemphasize = useCallback(
-    (id: string) => {
-      dispatch({
-        type: 'SET_SELECTED_ACTION',
-        payload: 'de-emphasize'
-      });
-      dispatch({
-        type: 'SET_ACTION_PARAMS',
-        payload: {
-          segmentId: id
-        }
-      });
-      handleStep('de-emphasize', {
-        segmentId: id
-      });
-    },
-    [dispatch, handleStep]
-  );
-  const handleTryAgain = useCallback(() => {
-    handleReset(selectedTask);
-  }, [handleReset, selectedTask]);
-  const handleTryHarder = useCallback(() => {
-    const nextTask = Math.min(3, selectedTask + 1) as TaskId;
-    handleReset(nextTask);
-  }, [handleReset, selectedTask]);
-  const handleCloseGrading = useCallback(() => {
-    dispatch({
-      type: 'SET_DONE',
-      payload: false
-    });
-    dispatch({
-      type: 'SET_GRADING_RESULT',
-      payload: null
-    });
-  }, [dispatch]);
-  const segments = observation?.segments ?? [];
-  const prevSegments = prevObservation?.segments;
-  const step = observation?.step ?? 0;
-  const maxSteps = observation?.maxSteps ?? 20;
+    phase,
+    inputMode,
+    textInput,
+    selectedFile,
+    filePreviewUrl,
+    result,
+    error,
+    analysisDuration,
+    canAnalyze,
+    setInputMode,
+    setTextInput,
+    handleFileSelect,
+    analyze,
+    reset,
+    retry,
+  } = useAdAnalysis();
+
   return (
     <div
       style={{
         width: '100vw',
-        height: '100vh',
+        minHeight: '100vh',
         background: 'var(--bg-base)',
         display: 'flex',
         flexDirection: 'column',
-        overflow: 'hidden',
-        fontFamily: 'var(--font-body)'
-      }}>
-      
-      {/* Main three-column layout */}
-      <div
+        fontFamily: 'var(--font-body)',
+        color: 'var(--text-primary)',
+      }}
+    >
+      <Navbar />
+
+      <main
         style={{
           flex: 1,
           display: 'flex',
-          overflow: 'hidden',
-          minHeight: 0
-        }}>
-        
-        {/* Left sidebar */}
-        <Sidebar
-          selectedTask={selectedTask}
-          onSelectTask={(task) =>
-          dispatch({
-            type: 'SET_SELECTED_TASK',
-            payload: task
-          })
-          }
-          onReset={handleReset}
-          step={step}
-          maxSteps={maxSteps}
-          isDone={isDone}
-          isLoading={isLoading}
-          apiConnected={apiConnected}
-          onGrade={handleGrade} />
-        
-
-        {/* Center panel */}
-        <CenterPanel
-          segments={segments}
-          prevSegments={prevSegments}
-          changedSegmentIds={changedSegmentIds}
-          showHeatmap={showHeatmap}
-          onToggleHeatmap={() =>
-          dispatch({
-            type: 'TOGGLE_HEATMAP'
-          })
-          }
-          onEmphasize={handleEmphasize}
-          onDeemphasize={handleDeemphasize}
-          onReorder={handleReorder}
-          isLoading={isLoading} />
-        
-
-        {/* Right panel */}
-        <aside
-          style={{
-            width: 360,
-            minWidth: 360,
-            background: 'var(--bg-surface)',
-            borderLeft: '1px solid var(--border-subtle)',
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden'
-          }}>
-          
-          {/* Metrics panel */}
+          flexDirection: 'column',
+          alignItems: 'center',
+          padding: '0 24px',
+        }}
+      >
+        {/* ── IDLE STATE: Hero + Upload ── */}
+        {(phase === 'idle') && (
           <div
             style={{
-              flex: 1,
-              overflowY: 'auto',
-              padding: '16px 16px 0'
-            }}>
-            
-            {observation ?
-            <CognitiveMetricsPanel
-              observation={observation}
-              prevObservation={prevObservation}
-              isLoading={isLoading} /> :
-
-
+              width: '100%',
+              maxWidth: 900,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              paddingTop: 60,
+              gap: 40,
+            }}
+          >
+            {/* Hero */}
             <div
               style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                height: '100%',
-                gap: 8
-              }}>
-              
-                <div
+                textAlign: 'center',
+                animation: 'fadeInUp 0.6s ease',
+              }}
+            >
+              <div
                 style={{
                   fontFamily: 'var(--font-display)',
-                  fontSize: 13,
-                  fontWeight: 600,
-                  color: 'var(--text-muted)',
-                  textAlign: 'center'
-                }}>
-                
-                  Cognitive Metrics
-                </div>
-                <div
+                  fontSize: 42,
+                  fontWeight: 800,
+                  letterSpacing: '-0.03em',
+                  lineHeight: 1.15,
+                  marginBottom: 16,
+                  background: 'linear-gradient(135deg, var(--text-primary) 0%, var(--accent-cyan) 60%, var(--accent-purple) 100%)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                }}
+              >
+                Test Your Ad Before
+                <br />
+                You Run It
+              </div>
+              <p
                 style={{
                   fontFamily: 'var(--font-body)',
-                  fontSize: 11,
-                  color: 'var(--text-muted)',
-                  textAlign: 'center',
-                  maxWidth: 200
-                }}>
-                
-                  Start an episode to see live cognitive metrics
-                </div>
-              </div>
-            }
-          </div>
+                  fontSize: 16,
+                  color: 'var(--text-secondary)',
+                  maxWidth: 520,
+                  margin: '0 auto',
+                  lineHeight: 1.6,
+                }}
+              >
+                AI-powered cognitive analysis using neuroscience models.
+                Predict engagement, attention, and memory retention — <em>before</em> spending a dollar.
+              </p>
 
-          {/* Action panel */}
+              {/* Trust badges */}
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'center',
+                  gap: 24,
+                  marginTop: 24,
+                }}
+              >
+                {[
+                  { icon: '🧠', text: 'TRIBE v2 Engine' },
+                  { icon: '⚡', text: 'Real-time Analysis' },
+                  { icon: '📊', text: 'Cognitive Metrics' },
+                ].map((badge) => (
+                  <div
+                    key={badge.text}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: 11,
+                      color: 'var(--text-muted)',
+                    }}
+                  >
+                    <span>{badge.icon}</span>
+                    {badge.text}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Upload Section */}
+            <AdUpload
+              inputMode={inputMode}
+              textInput={textInput}
+              filePreviewUrl={filePreviewUrl}
+              selectedFile={selectedFile}
+              onModeChange={setInputMode}
+              onTextChange={setTextInput}
+              onFileSelect={handleFileSelect}
+            />
+
+            {/* Analyze Button */}
+            <AnalyzeButton
+              onClick={analyze}
+              disabled={!canAnalyze}
+              isLoading={false}
+            />
+
+            {/* Footer hint */}
+            <div
+              style={{
+                textAlign: 'center',
+                paddingBottom: 40,
+                animation: 'fadeIn 0.5s ease 0.8s both',
+              }}
+            >
+              <p
+                style={{
+                  fontFamily: 'var(--font-body)',
+                  fontSize: 12,
+                  color: 'var(--text-muted)',
+                  maxWidth: 400,
+                  margin: '0 auto',
+                  lineHeight: 1.5,
+                }}
+              >
+                Powered by neuroscience-inspired cognitive simulation.
+                No data is stored — your ads remain private.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* ── ANALYZING STATE ── */}
+        {phase === 'analyzing' && (
+          <div style={{ paddingTop: 80 }}>
+            <LoadingOverlay onCancel={reset} />
+          </div>
+        )}
+
+        {/* ── RESULTS STATE ── */}
+        {phase === 'results' && result && (
+          <div style={{ width: '100%', paddingTop: 40 }}>
+            <ResultsDashboard
+              result={result}
+              duration={analysisDuration}
+              onReset={reset}
+            />
+          </div>
+        )}
+
+        {/* ── ERROR STATE ── */}
+        {phase === 'error' && (
           <div
             style={{
-              padding: '12px 16px 16px',
-              borderTop: '1px solid var(--border-subtle)',
-              background: 'var(--bg-surface)',
-              flexShrink: 0
-            }}>
-            
-            <ActionPanel
-              selectedAction={selectedAction}
-              actionParams={actionParams}
-              segments={segments}
-              isLoading={isLoading}
-              onSelectAction={(action) =>
-              dispatch({
-                type: 'SET_SELECTED_ACTION',
-                payload: action
-              })
-              }
-              onUpdateParams={(params) =>
-              dispatch({
-                type: 'SET_ACTION_PARAMS',
-                payload: params
-              })
-              }
-              onApply={() => handleStep()} />
-            
+              width: '100%',
+              maxWidth: 520,
+              margin: '0 auto',
+              paddingTop: 120,
+              textAlign: 'center',
+              animation: 'fadeInUp 0.4s ease',
+            }}
+          >
+            <div
+              style={{
+                width: 80,
+                height: 80,
+                borderRadius: 20,
+                background: 'rgba(255,77,106,0.1)',
+                border: '1px solid rgba(255,77,106,0.2)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 36,
+                margin: '0 auto 24px',
+              }}
+            >
+              ⚠️
+            </div>
+            <h3
+              style={{
+                fontFamily: 'var(--font-display)',
+                fontSize: 20,
+                fontWeight: 700,
+                color: 'var(--text-primary)',
+                margin: '0 0 8px',
+              }}
+            >
+              Analysis Failed
+            </h3>
+            <p
+              style={{
+                fontFamily: 'var(--font-body)',
+                fontSize: 14,
+                color: 'var(--text-secondary)',
+                margin: '0 0 24px',
+                lineHeight: 1.5,
+              }}
+            >
+              {error || 'Something went wrong. Please try again.'}
+            </p>
+            <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
+              <button
+                onClick={retry}
+                style={{
+                  padding: '10px 24px',
+                  borderRadius: 'var(--radius-md)',
+                  border: '1px solid var(--border-subtle)',
+                  background: 'var(--bg-surface)',
+                  color: 'var(--text-primary)',
+                  fontFamily: 'var(--font-body)',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = 'var(--accent-cyan)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = 'var(--border-subtle)';
+                }}
+              >
+                Try Again
+              </button>
+              <button
+                onClick={reset}
+                style={{
+                  padding: '10px 24px',
+                  borderRadius: 'var(--radius-md)',
+                  border: 'none',
+                  background: 'linear-gradient(135deg, #00D4FF, #8B5CF6)',
+                  color: '#fff',
+                  fontFamily: 'var(--font-body)',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                Start Over
+              </button>
+            </div>
           </div>
-        </aside>
-      </div>
+        )}
+      </main>
 
-      {/* Reward strip */}
-      <RewardStrip
-        reward={lastReward}
-        breakdown={lastRewardBreakdown}
-        rewardHistory={rewardHistory}
-        stepHistory={stepHistory}
-        isCollapsed={!showRewardStrip}
-        onToggle={() =>
-        dispatch({
-          type: 'TOGGLE_REWARD_STRIP'
-        })
-        } />
-      
-
-      {/* Grading modal */}
-      {(isDone || gradingResult) && gradingResult &&
-      <GradingModal
-        result={gradingResult}
-        currentTask={selectedTask}
-        onTryAgain={handleTryAgain}
-        onTryHarder={handleTryHarder}
-        onClose={handleCloseGrading} />
-
-      }
-
-      {/* Toast notifications */}
-      <ToastContainer
-        toasts={toasts}
-        onRemove={(id) =>
-        dispatch({
-          type: 'REMOVE_TOAST',
-          payload: id
-        })
-        } />
-      
-
-      {/* Global CSS for spin animation */}
+      {/* Global keyframes */}
       <style>{`
         @keyframes spin {
           from { transform: rotate(0deg); }
           to { transform: rotate(360deg); }
         }
-        @keyframes confettiFall {
-          0% { transform: translateY(-20px) rotate(0deg); opacity: 1; }
-          100% { transform: translateY(120px) rotate(360deg); opacity: 0; }
-        }
       `}</style>
-    </div>);
-
+    </div>
+  );
 }

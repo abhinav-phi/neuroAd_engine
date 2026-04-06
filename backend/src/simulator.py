@@ -470,6 +470,55 @@ def simulate_parametric(
     )
 
 
+def simulate_with_noise(
+    scenario: AdScenario,
+    coefficients: dict | None = None,
+    noise_scale: float = 0.08,
+) -> CognitiveMetrics:
+    """Parametric simulation with random noise for realistic variation.
+
+    Wraps simulate_parametric() and adds Gaussian jitter to every metric,
+    ensuring each analysis run produces slightly different scores while
+    preserving the underlying neuroscience model's signal.
+
+    noise_scale: standard deviation of the noise (default ±8%)
+    """
+    import random
+
+    base = simulate_parametric(scenario, coefficients=coefficients)
+
+    def _jitter01(value: float) -> float:
+        return _clamp(value + random.gauss(0, noise_scale), 0.0, 1.0)
+
+    def _jitter11(value: float) -> float:
+        return _clamp(value + random.gauss(0, noise_scale), -1.0, 1.0)
+
+    noisy_attention = [_jitter01(s) for s in base.attention_scores]
+    noisy_memory = [_jitter01(s) for s in base.memory_retention]
+    noisy_load = _jitter01(base.cognitive_load)
+    noisy_valence = _jitter11(base.emotional_valence)
+    noisy_engagement = _jitter01(base.engagement_score)
+    noisy_flow = classify_attention_flow(noisy_attention)
+
+    noisy_brain = _build_parametric_brain_response(
+        attention_scores=noisy_attention,
+        memory_scores=noisy_memory,
+        emotional_valence=noisy_valence,
+        load=noisy_load,
+    )
+
+    return CognitiveMetrics(
+        attention_scores=noisy_attention,
+        memory_retention=noisy_memory,
+        cognitive_load=noisy_load,
+        emotional_valence=noisy_valence,
+        engagement_score=noisy_engagement,
+        attention_flow=noisy_flow,  # type: ignore[arg-type]
+        simulation_source="parametric",
+        brain_response=noisy_brain,
+    )
+
+
 def simulate_with_tribev2(
     scenario: AdScenario,
     tribe_model: object | None = None,

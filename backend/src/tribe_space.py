@@ -16,8 +16,8 @@ import requests
 
 
 TRIBE_SPACE_URL = os.environ.get("TRIBE_SPACE_URL", "https://atharv-1447-meta-tribe-v2-api.hf.space").rstrip("/")
-TRIBE_SPACE_TIMEOUT_SECONDS = float(os.environ.get("TRIBE_SPACE_TIMEOUT_SECONDS", "300"))
-TRIBE_SPACE_READY_TIMEOUT_SECONDS = float(os.environ.get("TRIBE_SPACE_READY_TIMEOUT_SECONDS", "240"))
+TRIBE_SPACE_TIMEOUT_SECONDS = float(os.environ.get("TRIBE_SPACE_TIMEOUT_SECONDS", "12"))
+TRIBE_SPACE_READY_TIMEOUT_SECONDS = float(os.environ.get("TRIBE_SPACE_READY_TIMEOUT_SECONDS", "10"))
 WHISPER_MODEL_ID = os.environ.get("WHISPER_MODEL_ID", "openai/whisper-small")
 WHISPER_CACHE_DIR = os.environ.get("WHISPER_CACHE_DIR", str(Path("./cache/whisper_hf").resolve()))
 
@@ -114,60 +114,19 @@ class TribeSpaceClient:
         )
 
     def predict_text(self, text: str) -> Any:
-        attempts = [
-            {"text": text, **({"hf_token": self.api_token} if self.api_token else {})},
-            {"input": text},
-            {"data": [text]},
-        ]
-        last_error: TribeSpaceError | None = None
-        for payload in attempts:
-            warmed = False
-            for _ in range(2):
-                try:
-                    return self._request("POST", "/predict/text", json_payload=payload)
-                except TribeSpaceError as exc:
-                    last_error = exc
-                    if (exc.status_code in {502, 503, 504} or "timed out" in str(exc).lower()) and not warmed:
-                        warmed = True
-                        try:
-                            self.warmup()
-                            self.wait_until_ready()
-                        except TribeSpaceError:
-                            pass
-                        time.sleep(3.0)
-                        continue
-                    if (payload.get("text") is not None or payload.get("input") is not None) and exc.status_code in {
-                        400,
-                        404,
-                        422,
-                    }:
-                        break
-                    raise
-        raise last_error or TribeSpaceError("Hosted TRIBE Space predict call failed.")
+        """Send text to the hosted TRIBE Space. Fast path: try once, fail fast."""
+        payload = {"text": text, **({"hf_token": self.api_token} if self.api_token else {})}
+        return self._request("POST", "/predict/text", json_payload=payload)
 
     def predict_video(self, video_path: Path) -> Any:
+        """Send video to the hosted TRIBE Space. Fast path: try once, fail fast."""
         if not video_path.exists():
             raise TribeSpaceError(f"Uploaded video file does not exist: {video_path}")
 
-        warmed = False
-        for _ in range(2):
-            with video_path.open("rb") as handle:
-                files = {"file": (video_path.name, handle, "video/mp4")}
-                data_payload = {"hf_token": self.api_token} if self.api_token else None
-                try:
-                    return self._request("POST", "/predict/video", data_payload=data_payload, files=files)
-                except TribeSpaceError as exc:
-                    if exc.status_code in {502, 503, 504} and not warmed:
-                        warmed = True
-                        try:
-                            self.warmup()
-                        except TribeSpaceError:
-                            pass
-                        time.sleep(1.5)
-                        continue
-                    raise
-
-        raise TribeSpaceError("Hosted TRIBE Space video prediction failed after retry.")
+        with video_path.open("rb") as handle:
+            files = {"file": (video_path.name, handle, "video/mp4")}
+            data_payload = {"hf_token": self.api_token} if self.api_token else None
+            return self._request("POST", "/predict/video", data_payload=data_payload, files=files)
 
 
 def _find_first_numeric(payload: Any, candidate_keys: set[str]) -> float | None:

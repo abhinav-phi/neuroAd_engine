@@ -9,22 +9,19 @@ from typing import Literal
 from backend.src.grader import grade_episode
 from backend.src.models import Action, AdScenario, CognitiveMetrics, EnvState, GradeResult, Observation
 from backend.src.reward import compute_reward
-from backend.src.simulator import simulate_parametric, simulate_with_tribev2
+from backend.src.simulator import simulate_parametric
 from backend.src.tasks import build_scenario, get_task_config
 
 
 class CognitiveAdEnv:
-    """OpenEnv-compatible RL environment for cognitive ad optimization."""
+    """OpenEnv-compatible RL environment for cognitive ad optimization.
 
-    def __init__(
-        self,
-        use_tribev2: bool = False,
-        tribe_model: object | None = None,
-        tribe_adapter: object | None = None,
-    ) -> None:
-        self.use_tribev2 = use_tribev2
-        self.tribe_model = tribe_model
-        self.tribe_adapter = tribe_adapter
+    NOTE: All model inference goes through the hosted TRIBE Space API.
+    No local tribev2 model is loaded. The RL env uses parametric simulation
+    for the step/reset/grade loop (which is deterministic and fast).
+    """
+
+    def __init__(self) -> None:
         self.scenario: AdScenario | None = None
         self.cognitive_metrics: CognitiveMetrics | None = None
         self.initial_metrics: CognitiveMetrics | None = None
@@ -38,22 +35,8 @@ class CognitiveAdEnv:
         self.emphasis_action_count: int = 0
         self.last_reward_info: dict = {}
 
-        # Best-effort TRIBE v2 load when requested; fallback stays safe.
-        if self.use_tribev2 and self.tribe_model is None:
-            try:
-                from tribev2 import TribeModel  # type: ignore[import-not-found]
-
-                self.tribe_model = TribeModel.from_pretrained("facebook/tribev2", cache_folder="./cache")
-            except Exception:
-                self.use_tribev2 = False
-
-    def _active_simulation_mode(self) -> Literal["tribev2", "parametric"]:
-        return "tribev2" if self.use_tribev2 and self.tribe_model is not None else "parametric"
-
     def _simulate(self) -> CognitiveMetrics:
         assert self.scenario is not None
-        if self.use_tribev2 and self.tribe_model is not None:
-            return simulate_with_tribev2(self.scenario, self.tribe_model, adapter=self.tribe_adapter)
         return simulate_parametric(self.scenario)
 
     def _build_observation(self) -> Observation:
@@ -101,7 +84,7 @@ class CognitiveAdEnv:
         return EnvState(
             scenario=self.scenario.model_copy(deep=True),
             cognitive_metrics=self.cognitive_metrics.model_copy(deep=True),
-            simulation_mode=self._active_simulation_mode(),
+            simulation_mode="parametric",
             step=self.step_count,
             max_steps=self.max_steps,
             task_id=self.task_id,
