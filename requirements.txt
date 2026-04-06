@@ -9,3 +9,4 @@ requests>=2.31
 imageio>=2.34
 imageio-ffmpeg>=0.4
 Pillow>=10.0
+python-multipart==0.0.9
